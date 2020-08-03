@@ -1,10 +1,10 @@
 #!/bin/bash
 set -ev
-if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ] && [ "$TRAVIS_REPO_SLUG" == "swisspush/gateleen" ]
+if [ "$TRAVIS_BRANCH" == "V1.1.53.1" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ] && [ "$TRAVIS_REPO_SLUG" == "ZhengXinCN/gateleen" ]
 then
     git reset --hard
     git clean -fd
-    git checkout master
+    git checkout V1.1.53.1
     echo 'Master checked out'
     groovy staging.groovy drop
     rc=$?
@@ -27,11 +27,7 @@ then
           echo 'Release failed, cannot promote stage'
           exit rc
         fi
-        echo 'Release done, will push'
-        git tag
-        git push --tags
-        git checkout develop
-        git push origin develop
+        echo 'Release done'
       exit 0
     fi
     echo 'Release failed'
