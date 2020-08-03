@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "description": "Delegate definition",
+  "type": "object",
+  "properties": {
+    "methods": {
+      "description": "Restricts the HTTP methods concerned by this rule (`GET`, `PUT`, `POST`, `DELETE`).\nWhen absent, all methods are concerned.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "description": {
+      "description": "Documents this delegate",
+      "type": "string"
+    },    
+    "doc": {
+      "description": "Link or reference to feature/specification documentation",
+      "type": "string"
+    },	
+    "pattern": {
+      "description": "Pattern for grouping the incomming uri",
+      "type": "string"
+    },
+    "requests": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/Request"}
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Request": {
+      "oneOf": [
+        { "required": ["payload"] },
+        { "required": ["transform"] },
+        { "required": ["transformWithMetadata"] }
+      ],
+      "properties": {
+        "uri": {
+          "description": "The target of the request",
+          "type": "string"
+        },
+        "method": {
+          "description": "The operation to perform",
+          "enum": [
+            "GET",
+            "PUT",
+            "POST",
+            "DELETE"
+          ]
+        },
+        "payload": {
+          "description": "The payload to send in requests body",
+          "type": "object"
+        },
+        "transform": {
+          "description": "The jolt spec definition to transform the payload",
+          "type": "array"
+        },
+        "transformWithMetadata": {
+          "description": "The jolt spec definition to transform the payload and additional metadata",
+          "type": "array"
+        },
+        "headers": {
+          "description": "Headers to send with the request",
+          "type": "array",
+          "items": {
+            "description": "Header value pairs",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "uri",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "methods",
+    "pattern",
+    "requests"
+  ]
+}

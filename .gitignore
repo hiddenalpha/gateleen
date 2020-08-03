@@ -1,3 +1,13 @@
-*
-!/README.md
-!.gitignore
+.idea
+.project
+.classpath
+.settings
+target
+*.iml
+.vertx
+build
+.gradle
+playground_logs.log
+**/node/
+**/node_modules/
+redis
