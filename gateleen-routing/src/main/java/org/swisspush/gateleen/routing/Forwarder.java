@@ -9,14 +9,19 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.Pump;
+import io.vertx.core.streams.ReadStream;
 import io.vertx.core.streams.WriteStream;
+import io.vertx.core.streams.impl.PumpImpl;
 import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.http.HeaderFunctions;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
 import org.swisspush.gateleen.core.storage.ResourceStorage;
-import org.swisspush.gateleen.core.util.*;
+import org.swisspush.gateleen.core.util.HttpHeaderUtil;
+import org.swisspush.gateleen.core.util.ResponseStatusCodeLogUtil;
+import org.swisspush.gateleen.core.util.StatusCode;
+import org.swisspush.gateleen.core.util.StringUtils;
 import org.swisspush.gateleen.logging.LoggingHandler;
 import org.swisspush.gateleen.logging.LoggingResourceManager;
 import org.swisspush.gateleen.logging.LoggingWriteStream;
@@ -391,18 +396,8 @@ public class Forwarder implements Handler<RoutingContext> {
             }
 
             final LoggingWriteStream loggingWriteStream = new LoggingWriteStream(req.response(), loggingHandler, false);
-            final Pump pump = Pump.pump(cRes, loggingWriteStream);
-            cRes.endHandler(v -> {
-                try {
-                    req.response().end();
-                    ResponseStatusCodeLogUtil.debug(req, StatusCode.fromCode(req.response().getStatusCode()), Forwarder.class);
-                } catch (IllegalStateException e) {
-                    // ignore because maybe already closed
-                }
-                vertx.runOnContext(event -> loggingHandler.log());
-            });
-            pump.start();
-
+            //final Pump pump = Pump.pump(cRes, loggingWriteStream);
+            final Pump pump = new MyPumpImpl<>(cRes, loggingWriteStream, req);
             Runnable unpump = () -> {
                 // disconnect the clientResponse from the Pump and resume this (probably paused-by-pump) stream to keep it alive
                 pump.stop();
@@ -414,14 +409,79 @@ public class Forwarder implements Handler<RoutingContext> {
 
             cRes.exceptionHandler(exception -> {
                 LOG.warn("Failed to read upstream response for '{} {}'", req.method(), targetUri, exception);
-                unpump.run();
                 error("Problem with backend: " + exception.getMessage(), req, targetUri);
-                respondError(req, StatusCode.INTERNAL_SERVER_ERROR);
+                HttpServerResponse rsp = req.response();
+                rsp.close(); // Make the response explode.
+                unpump.run();
             });
+            cRes.endHandler(v -> {
+                Object sadf = cRes;
+                try {
+                    req.response().end();
+                    ResponseStatusCodeLogUtil.debug(req, StatusCode.fromCode(req.response().getStatusCode()), Forwarder.class);
+                } catch (IllegalStateException e) {
+                    LOG.error("F*** your damn 'ignore' catches", e);// ignore because maybe already closed
+                }
+                vertx.runOnContext(event -> loggingHandler.log());
+            });
+            pump.start();
+
             req.connection().closeHandler((aVoid) -> {
                 unpump.run();
             });
         });
+    }
+
+    public class MyPumpImpl<T> implements Pump {
+        private final ReadStream<T> readStream;
+        private final WriteStream<T> writeStream;
+        private final Handler<T> dataHandler;
+        private final Handler<Void> drainHandler;
+        private final HttpServerRequest request;
+        private int pumped;
+
+        public MyPumpImpl(ReadStream<T> src, WriteStream<T> dst, HttpServerRequest request) {
+            this.readStream = src;
+            this.writeStream = dst;
+            this.request = request;
+            drainHandler = v-> readStream.resume();
+            dataHandler = data -> {
+                writeStream.write(data);
+                incPumped();
+                if (writeStream.writeQueueFull()) {
+                    readStream.pause();
+                    writeStream.drainHandler(drainHandler);
+                }
+            };
+        }
+
+        @Override
+        public MyPumpImpl<T> setWriteQueueMaxSize(int maxSize) {
+            writeStream.setWriteQueueMaxSize(maxSize);
+            return this;
+        }
+
+        @Override
+        public MyPumpImpl<T> start() {
+            readStream.handler(dataHandler);
+            return this;
+        }
+
+        @Override
+        public MyPumpImpl<T> stop() {
+            writeStream.drainHandler(null);
+            readStream.handler(null);
+            return this;
+        }
+
+        @Override
+        public synchronized int numberPumped() {
+            return pumped;
+        }
+
+        private synchronized void incPumped() {
+            pumped++;
+        }
     }
 
     private void respondError(HttpServerRequest req, StatusCode statusCode) {

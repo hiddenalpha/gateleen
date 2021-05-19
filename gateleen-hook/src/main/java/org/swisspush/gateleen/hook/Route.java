@@ -176,7 +176,8 @@ public class Route {
         // url request
         else {
             HttpClientOptions options = rule.buildHttpClientOptions();
-            client = vertx.createHttpClient(options);
+            client = new DeferCloseHttpClient(vertx, vertx.createHttpClient(options));
+            //client.connectionHandler(event -> {}); // <- TODO Could this help?
         }
     }
 
@@ -215,10 +216,8 @@ public class Route {
      */
     public void cleanup() {
         if ( ! rule.getScheme().equals("local") ) {
-            vertx.setTimer(GRACE_PERIOD, event -> {
-                LOG.debug("Cleaning up one client for route of " + urlPattern);
-                client.close();
-            });
+            LOG.debug("Cleaning up one client for route of " + urlPattern);
+            client.close();
         }
     }
 
