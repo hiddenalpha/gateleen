@@ -90,6 +90,7 @@ public class DeferCloseHttpClient implements HttpClient {
         logger.debug("Pending request count: {}", countOfRequestsInProgress);
         if (countOfRequestsInProgress == 0 && doCloseWhenDone) {
             logger.debug("No pending request right now. And there was a request to close. So close now.");
+            doCloseWhenDone = false; // TODO: Do we need this?
             delegate.close();
         }
     }
