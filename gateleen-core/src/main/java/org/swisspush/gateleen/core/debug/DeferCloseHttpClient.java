@@ -104,11 +104,11 @@ public class DeferCloseHttpClient implements HttpClient {
 
     private <T> T getPrivateField(HttpClientResponse rsp, String name, Class<T> type) {
         try {
-            Field endHandlerField = rsp.getClass().getDeclaredField(name);
-            endHandlerField.setAccessible(true);
-            return (T) endHandlerField.get(rsp);
+            Field field = rsp.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            return (T) field.get(rsp);
         } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new UnsupportedOperationException("TODO: Not impl yet", e); /*TODO*/
+            throw new RuntimeException(e);
         }
     }
 

@@ -426,58 +426,6 @@ public class Forwarder implements Handler<RoutingContext> {
         });
     }
 
-    public class MyPumpImpl<T> implements Pump {
-        private final ReadStream<T> readStream;
-        private final WriteStream<T> writeStream;
-        private final Handler<T> dataHandler;
-        private final Handler<Void> drainHandler;
-        private final HttpServerRequest request;
-        private int pumped;
-
-        public MyPumpImpl(ReadStream<T> src, WriteStream<T> dst, HttpServerRequest request) {
-            this.readStream = src;
-            this.writeStream = dst;
-            this.request = request;
-            drainHandler = v-> readStream.resume();
-            dataHandler = data -> {
-                writeStream.write(data);
-                incPumped();
-                if (writeStream.writeQueueFull()) {
-                    readStream.pause();
-                    writeStream.drainHandler(drainHandler);
-                }
-            };
-        }
-
-        @Override
-        public MyPumpImpl<T> setWriteQueueMaxSize(int maxSize) {
-            writeStream.setWriteQueueMaxSize(maxSize);
-            return this;
-        }
-
-        @Override
-        public MyPumpImpl<T> start() {
-            readStream.handler(dataHandler);
-            return this;
-        }
-
-        @Override
-        public MyPumpImpl<T> stop() {
-            writeStream.drainHandler(null);
-            readStream.handler(null);
-            return this;
-        }
-
-        @Override
-        public synchronized int numberPumped() {
-            return pumped;
-        }
-
-        private synchronized void incPumped() {
-            pumped++;
-        }
-    }
-
     private void respondError(HttpServerRequest req, StatusCode statusCode) {
         try {
             ResponseStatusCodeLogUtil.info(req, statusCode, Forwarder.class);
