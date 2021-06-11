@@ -11,7 +11,6 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.Pump;
 import io.vertx.core.streams.ReadStream;
 import io.vertx.core.streams.WriteStream;
-import io.vertx.core.streams.impl.PumpImpl;
 import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -396,8 +395,18 @@ public class Forwarder implements Handler<RoutingContext> {
             }
 
             final LoggingWriteStream loggingWriteStream = new LoggingWriteStream(req.response(), loggingHandler, false);
-            //final Pump pump = Pump.pump(cRes, loggingWriteStream);
-            final Pump pump = new MyPumpImpl<>(cRes, loggingWriteStream, req);
+            final Pump pump = Pump.pump(cRes, loggingWriteStream);
+            cRes.endHandler(v -> {
+                try {
+                    req.response().end();
+                    ResponseStatusCodeLogUtil.debug(req, StatusCode.fromCode(req.response().getStatusCode()), Forwarder.class);
+                } catch (IllegalStateException e) {
+                    // ignore because maybe already closed
+                }
+                vertx.runOnContext(event -> loggingHandler.log());
+            });
+            pump.start();
+
             Runnable unpump = () -> {
                 // disconnect the clientResponse from the Pump and resume this (probably paused-by-pump) stream to keep it alive
                 pump.stop();
@@ -409,23 +418,8 @@ public class Forwarder implements Handler<RoutingContext> {
 
             cRes.exceptionHandler(exception -> {
                 LOG.warn("Failed to read upstream response for '{} {}'", req.method(), targetUri, exception);
-                error("Problem with backend: " + exception.getMessage(), req, targetUri);
-                HttpServerResponse rsp = req.response();
-                rsp.close(); // Make the response explode.
                 unpump.run();
             });
-            cRes.endHandler(v -> {
-                Object sadf = cRes;
-                try {
-                    req.response().end();
-                    ResponseStatusCodeLogUtil.debug(req, StatusCode.fromCode(req.response().getStatusCode()), Forwarder.class);
-                } catch (IllegalStateException e) {
-                    LOG.error("F*** your damn 'ignore' catches", e);// ignore because maybe already closed
-                }
-                vertx.runOnContext(event -> loggingHandler.log());
-            });
-            pump.start();
-
             req.connection().closeHandler((aVoid) -> {
                 unpump.run();
             });

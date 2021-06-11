@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.configuration.ConfigurationResourceManager;
 import org.swisspush.gateleen.core.configuration.ConfigurationResourceObserver;
+import org.swisspush.gateleen.core.debug.DeferCloseHttpClient;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
 import org.swisspush.gateleen.core.logging.LoggableResource;
 import org.swisspush.gateleen.core.logging.RequestLogger;
@@ -343,6 +344,9 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
                 forwarder = new Forwarder(vertx, selfClient, rule, this.storage, loggingResourceManager, monitoringHandler, userProfileUri);
             } else {
                 HttpClient client = vertx.createHttpClient(rule.buildHttpClientOptions());
+                /* Intercept the client */ {
+                    client = new DeferCloseHttpClient(vertx, client);
+                }
                 forwarder = new Forwarder(vertx, client, rule, this.storage, loggingResourceManager, monitoringHandler, userProfileUri);
                 newClients.add(client);
             }
@@ -379,9 +383,9 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
     private void cleanup() {
         final HashSet<HttpClient> clientsToClose = new HashSet<>(httpClients);
         vertx.setTimer(GRACE_PERIOD, event -> {
-            if (clientsToClose.size() > 0) {
+            //if (clientsToClose.size() > 0) {
                 log.debug("Cleaning up {} clients", clientsToClose.size());
-            }
+            //}
             for (HttpClient client : clientsToClose) {
                 client.close();
             }

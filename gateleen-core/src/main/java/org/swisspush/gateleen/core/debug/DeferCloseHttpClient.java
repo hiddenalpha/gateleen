@@ -1,4 +1,4 @@
-package org.swisspush.gateleen.hook;
+package org.swisspush.gateleen.core.debug;
 
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
@@ -9,6 +9,7 @@ import io.vertx.core.streams.ReadStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
 import java.util.function.Function;
 
 
@@ -54,7 +55,46 @@ public class DeferCloseHttpClient implements HttpClient {
 
     @Override
     public HttpClientRequest request(HttpMethod method, int port, String host, String requestURI, Handler<HttpClientResponse> responseHandler) {
-        throw new UnsupportedOperationException("TODO: Not impl yet");/*TODO*/
+        logger.debug("({}:{}).request({}, \"{}\")", host, port, method, requestURI);
+        countOfRequestsInProgress += 1;
+        logger.debug("Pending request count: {}", countOfRequestsInProgress);
+        HttpClientRequest request = delegate.request(method, port, host, requestURI, upstreamRsp -> {
+            logger.debug("onUpstreamRsp(code={})", upstreamRsp.statusCode());
+            responseHandler.handle(upstreamRsp);
+            Handler<Void> originalEndHandler = getEndHandler(upstreamRsp);
+            upstreamRsp.endHandler(event -> {
+                logger.debug("upstreamRsp.endHandler()");
+                countOfRequestsInProgress -= 1;
+                logger.debug("Pending request count: {}", countOfRequestsInProgress);
+                originalEndHandler.handle(event);
+            });
+            Handler<Throwable> originalExceptionHandler = getExceptionHandler(upstreamRsp);
+            upstreamRsp.exceptionHandler(event -> {
+                logger.debug("upstreamRsp.exceptionHandler({})", event.toString());
+                countOfRequestsInProgress -= 1;
+                logger.debug("Pending request count: {}", countOfRequestsInProgress);
+                originalExceptionHandler.handle(event);
+            });
+        });
+        return request;
+    }
+
+    private Handler<Void> getEndHandler(HttpClientResponse rsp) {
+        return getPrivateField(rsp, "endHandler", Handler.class);
+    }
+
+    private Handler<Throwable> getExceptionHandler(HttpClientResponse rsp) {
+        return getPrivateField(rsp, "exceptionHandler", Handler.class);
+    }
+
+    private <T> T getPrivateField(HttpClientResponse rsp, String name, Class<T> type) {
+        try {
+            Field endHandlerField = rsp.getClass().getDeclaredField(name);
+            endHandlerField.setAccessible(true);
+            return (T) endHandlerField.get(rsp);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new UnsupportedOperationException("TODO: Not impl yet", e); /*TODO*/
+        }
     }
 
     @Override
@@ -710,11 +750,12 @@ public class DeferCloseHttpClient implements HttpClient {
     @Override
     public void close() {
         if (countOfRequestsInProgress > 0) {
-            // Do NOT close right now. But close as soon there are no more pending requests.
+            logger.debug("Do NOT close right now. But close as soon there are no more pending requests (pending={})", countOfRequestsInProgress);
+            //
             doCloseWhenDone = true;
             return;
         }
-        // We're idle. Close right now.
+        logger.debug("We're idle. Close right now");
         delegate.close();
     }
 
