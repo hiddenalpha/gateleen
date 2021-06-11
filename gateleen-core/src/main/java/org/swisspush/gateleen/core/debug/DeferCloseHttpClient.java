@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 
@@ -62,21 +63,35 @@ public class DeferCloseHttpClient implements HttpClient {
             logger.debug("onUpstreamRsp(code={})", upstreamRsp.statusCode());
             responseHandler.handle(upstreamRsp);
             Handler<Void> originalEndHandler = getEndHandler(upstreamRsp);
+            AtomicBoolean endAlreadyPublished = new AtomicBoolean(false);
             upstreamRsp.endHandler(event -> {
                 logger.debug("upstreamRsp.endHandler()");
-                countOfRequestsInProgress -= 1;
-                logger.debug("Pending request count: {}", countOfRequestsInProgress);
+                if (!endAlreadyPublished.get()){
+                    endAlreadyPublished.set(true);
+                    onEndOfRequestResponseCycle();
+                }
                 originalEndHandler.handle(event);
             });
             Handler<Throwable> originalExceptionHandler = getExceptionHandler(upstreamRsp);
             upstreamRsp.exceptionHandler(event -> {
                 logger.debug("upstreamRsp.exceptionHandler({})", event.toString());
-                countOfRequestsInProgress -= 1;
-                logger.debug("Pending request count: {}", countOfRequestsInProgress);
+                if (!endAlreadyPublished.get()){
+                    endAlreadyPublished.set(true);
+                    onEndOfRequestResponseCycle();
+                }
                 originalExceptionHandler.handle(event);
             });
         });
         return request;
+    }
+
+    private void onEndOfRequestResponseCycle() {
+        countOfRequestsInProgress -= 1;
+        logger.debug("Pending request count: {}", countOfRequestsInProgress);
+        if (countOfRequestsInProgress == 0 && doCloseWhenDone) {
+            logger.debug("No pending request right now. And there was a request to close. So close now.");
+            delegate.close();
+        }
     }
 
     private Handler<Void> getEndHandler(HttpClientResponse rsp) {
