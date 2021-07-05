@@ -24,6 +24,7 @@ import java.util.function.Function;
  */
 public class DeferCloseHttpClient implements HttpClient {
 
+    private final int CLOSE_ANYWAY_AFTER_MS = 86_400_000;
     private static final Logger logger = LoggerFactory.getLogger(DeferCloseHttpClient.class);
     private final Vertx vertx;
     private final HttpClient delegate;
@@ -36,17 +37,6 @@ public class DeferCloseHttpClient implements HttpClient {
     public DeferCloseHttpClient(Vertx vertx, HttpClient delegate) {
         this.vertx = vertx;
         this.delegate = delegate;
-    }
-
-    @Override
-    public void close() {
-        if (countOfRequestsInProgress > 0) {
-            logger.debug("Do NOT close right now. But close as soon there are no more pending requests (pending={})", countOfRequestsInProgress);
-            doCloseWhenDone = true;
-            return;
-        }
-        logger.debug("Client idle. Close right now");
-        delegate.close();
     }
 
     @Override
@@ -103,13 +93,33 @@ public class DeferCloseHttpClient implements HttpClient {
         countOfRequestsInProgress -= 1;
         logger.debug("Pending request count: {}", countOfRequestsInProgress);
         if (countOfRequestsInProgress == 0 && doCloseWhenDone) {
-            logger.debug("No pending request right now. And there was a request to close earlier. So close now.");
+            logger.debug("No pending request right now. And someone called 'close()' earlier. So close now.");
+            doCloseWhenDone = false;
             try {
                 delegate.close();
             } catch (Exception e) {
                 logger.warn("delegate.close() failed", e);
             }
         }
+    }
+
+    @Override
+    public void close() {
+        if (countOfRequestsInProgress > 0) {
+            logger.debug("Do NOT close right now. But close as soon there are no more pending requests (pending={})", countOfRequestsInProgress);
+            doCloseWhenDone = true;
+            // Still use a timer. Because who knows.
+            vertx.setTimer(CLOSE_ANYWAY_AFTER_MS, timerId -> {
+                if (doCloseWhenDone) {
+                    logger.warn("RequestResponse cycle still running after {} seconds. Will close now to prevent resource leaks.", CLOSE_ANYWAY_AFTER_MS);
+                    doCloseWhenDone = false;
+                    delegate.close();
+                }
+            });
+            return;
+        }
+        logger.debug("Client idle. Close right now");
+        delegate.close();
     }
 
 

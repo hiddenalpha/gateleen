@@ -4,7 +4,10 @@ import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
-import io.vertx.core.http.*;
+import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpHeaders;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
@@ -344,9 +347,7 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
                 forwarder = new Forwarder(vertx, selfClient, rule, this.storage, loggingResourceManager, monitoringHandler, userProfileUri);
             } else {
                 HttpClient client = vertx.createHttpClient(rule.buildHttpClientOptions());
-                /* Intercept the client */ {
-                    client = new DeferCloseHttpClient(vertx, client);
-                }
+                client = new DeferCloseHttpClient(vertx, client); // <- Decorate for better close-handling
                 forwarder = new Forwarder(vertx, client, rule, this.storage, loggingResourceManager, monitoringHandler, userProfileUri);
                 newClients.add(client);
             }
