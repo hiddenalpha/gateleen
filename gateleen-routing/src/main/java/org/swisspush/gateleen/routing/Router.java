@@ -383,9 +383,7 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
     private void cleanup() {
         final HashSet<HttpClient> clientsToClose = new HashSet<>(httpClients);
         vertx.setTimer(GRACE_PERIOD, event -> {
-            //if (clientsToClose.size() > 0) {
-                log.debug("Cleaning up {} clients", clientsToClose.size());
-            //}
+            log.debug("Cleaning up {} clients", clientsToClose.size());
             for (HttpClient client : clientsToClose) {
                 client.close();
             }

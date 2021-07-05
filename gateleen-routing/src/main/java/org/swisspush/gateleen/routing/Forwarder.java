@@ -9,7 +9,6 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.Pump;
-import io.vertx.core.streams.ReadStream;
 import io.vertx.core.streams.WriteStream;
 import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
@@ -17,10 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.http.HeaderFunctions;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
 import org.swisspush.gateleen.core.storage.ResourceStorage;
-import org.swisspush.gateleen.core.util.HttpHeaderUtil;
-import org.swisspush.gateleen.core.util.ResponseStatusCodeLogUtil;
-import org.swisspush.gateleen.core.util.StatusCode;
-import org.swisspush.gateleen.core.util.StringUtils;
+import org.swisspush.gateleen.core.util.*;
 import org.swisspush.gateleen.logging.LoggingHandler;
 import org.swisspush.gateleen.logging.LoggingResourceManager;
 import org.swisspush.gateleen.logging.LoggingWriteStream;
@@ -419,6 +415,8 @@ public class Forwarder implements Handler<RoutingContext> {
             cRes.exceptionHandler(exception -> {
                 LOG.warn("Failed to read upstream response for '{} {}'", req.method(), targetUri, exception);
                 unpump.run();
+                error("Problem with backend: " + exception.getMessage(), req, targetUri);
+                respondError(req, StatusCode.INTERNAL_SERVER_ERROR);
             });
             req.connection().closeHandler((aVoid) -> {
                 unpump.run();
