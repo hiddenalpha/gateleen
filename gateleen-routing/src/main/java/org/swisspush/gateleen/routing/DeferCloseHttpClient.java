@@ -1,4 +1,4 @@
-package org.swisspush.gateleen.core.debug;
+package org.swisspush.gateleen.routing;
 
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
