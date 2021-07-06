@@ -24,7 +24,7 @@ import java.util.function.Function;
  */
 public class DeferCloseHttpClient implements HttpClient {
 
-    private final int CLOSE_ANYWAY_AFTER_MS = 86_400_000;
+    private final int CLOSE_ANYWAY_AFTER_MS = 86_400_000; // <- TODO: Find a good value.
     private static final Logger logger = LoggerFactory.getLogger(DeferCloseHttpClient.class);
     private final Vertx vertx;
     private final HttpClient delegate;
