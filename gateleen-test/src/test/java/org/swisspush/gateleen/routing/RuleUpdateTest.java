@@ -86,6 +86,7 @@ public class RuleUpdateTest {
                 if (readLen == -1){
                     logger.info("response.end()");
                     rsp.end();
+                    return;
                 }
                 vBuf.setBytes(0, buf, 0, readLen);
                 rsp.write(vBuf);
