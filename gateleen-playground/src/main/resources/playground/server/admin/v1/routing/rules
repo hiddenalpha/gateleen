@@ -1,4 +1,7 @@
 {
+  "/playground/server/storage-file(.*)": {
+    "url": "http://localhost:4242/playground$1"
+  },
   "/playground/service/unavailable/(.*)": {
     "description": "Respond every request with status code 503",
     "path": "/playground/server/return-with-status-code/503"

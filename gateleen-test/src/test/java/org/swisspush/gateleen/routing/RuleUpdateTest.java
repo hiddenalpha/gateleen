@@ -28,7 +28,7 @@ public class RuleUpdateTest {
     private static final String baseURI = "http://" + host;
     private static final String routingRulesPath = "/playground/server/admin/v1/routing/rules";
     private static final int largeResourceSeed = 42 * 42;
-    private static final String largeResourcePath = "/playground/server/test/" + RuleUpdateTest.class.getSimpleName() + "/my-large-resource.bin";
+    private static final String largeResourcePath = "/playground/server/storage-file/test/" + RuleUpdateTest.class.getSimpleName() + "/my-large-resource.bin";
     private static final int largeResourceSize = 16 * 1024 * 1024; // <- Must be larger than all network buffers together.
     private static final String largeResourceContentType = "application/javascript";
     private final int gateleenGracePeriod;
@@ -51,7 +51,7 @@ public class RuleUpdateTest {
     }
 
     @Test
-    public void gateleenMustProperlyCloseItsDownstreamResponse() throws ExecutionException, InterruptedException, IOException {
+    public void gateleenMustProperlyCloseItsDownstreamResponse() throws InterruptedException, IOException {
         RestAssured.basePath = "/";
         logger.info( "Setup a large resource which we can download during the test." );
         customPut(largeResourcePath, largeResourceContentType,
