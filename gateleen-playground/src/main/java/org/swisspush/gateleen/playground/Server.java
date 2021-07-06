@@ -1,7 +1,6 @@
 package org.swisspush.gateleen.playground;
 
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServer;
@@ -64,8 +63,6 @@ import org.swisspush.gateleen.user.RoleProfileHandler;
 import org.swisspush.gateleen.user.UserProfileHandler;
 import org.swisspush.gateleen.validation.ValidationHandler;
 import org.swisspush.gateleen.validation.ValidationResourceManager;
-import org.swisspush.reststorage.RestStorageMod;
-import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -302,22 +299,6 @@ public class Server extends AbstractVerticle {
                 // till vertx2 100-continues was performed automatically (per default),
                 // since vertx3 it is off per default.
                 options.setHandle100ContinueAutomatically(true);
-
-                // File Storage
-                {
-                    final String storageFileDir = "C:/work/tmp/gateleen-playground/storage-file";
-                    ModuleConfiguration storageFileConfig = new ModuleConfiguration()
-                            .return200onDeleteNonExisting(true)
-                            .storageType(ModuleConfiguration.StorageType.filesystem)
-                            .storageAddress(Address.storageAddress() + "-file")
-                            .port(4242)
-                            .root(storageFileDir);
-                    DeploymentOptions deplOpt = new DeploymentOptions().setConfig(storageFileConfig.asJsonObject()).setInstances(4);
-                    log.error("RestStorageMod deploy");
-                    vertx.deployVerticle(RestStorageMod.class.getName(), deplOpt, event -> {
-                        log.error("RestStorageMod done");
-                    });
-                }
 
                 mainServer = vertx.createHttpServer(options);
                 io.vertx.ext.web.Router vertxRouter = io.vertx.ext.web.Router.router(vertx);

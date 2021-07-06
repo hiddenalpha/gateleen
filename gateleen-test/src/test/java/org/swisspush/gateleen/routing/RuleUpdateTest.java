@@ -2,12 +2,18 @@ package org.swisspush.gateleen.routing;
 
 import com.jayway.restassured.RestAssured;
 import com.jayway.restassured.response.Response;
+import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerResponse;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -15,9 +21,9 @@ import java.lang.reflect.Field;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Random;
-import java.util.concurrent.ExecutionException;
 
 import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 
 public class RuleUpdateTest {
@@ -27,11 +33,20 @@ public class RuleUpdateTest {
     private static final int port = 7012;
     private static final String baseURI = "http://" + host;
     private static final String routingRulesPath = "/playground/server/admin/v1/routing/rules";
+    private final int gateleenGracePeriod;
+    private static String origRules;
+
+    // Mocked upstream server.
+    private static final String upstreamHost = "localhost";
+    private static int upstreamPort;
+    private static final String upstreamPath = "/playground/server/" + RuleUpdateTest.class.getSimpleName() + "/the-other-host";
+    private static HttpServer httpServer;
+
+    // Large (mock) resource to play with.
     private static final int largeResourceSeed = 42 * 42;
-    private static final String largeResourcePath = "/playground/server/storage-file/test/" + RuleUpdateTest.class.getSimpleName() + "/my-large-resource.bin";
+    private static final String largeResourcePath = upstreamPath + "/my-large-resource.bin";
     private static final int largeResourceSize = 16 * 1024 * 1024; // <- Must be larger than all network buffers together.
     private static final String largeResourceContentType = "application/javascript";
-    private final int gateleenGracePeriod;
 
     public RuleUpdateTest() {
         try {
@@ -44,20 +59,59 @@ public class RuleUpdateTest {
     }
 
     @BeforeClass
-    public static void config() {
+    public static void config() throws IOException {
         RestAssured.baseURI = baseURI;
         RestAssured.port = port;
-        System.out.println("Testing against: " + RestAssured.baseURI + ":" + RestAssured.port);
+        RestAssured.basePath = "/";
+        logger.info("Testing against: " + RestAssured.baseURI + ":" + RestAssured.port);
+
+        // Setup a custom upstream server we can use to download our resource from (through gateleen).
+        httpServer = Vertx.vertx().createHttpServer().requestHandler(req -> {
+            HttpServerResponse rsp = req.response();
+            req.exceptionHandler(event -> {
+                logger.info("exceptionHandler()");
+                rsp.close();
+            });
+            rsp.setChunked(true);
+            InputStream largeResource = newLargeResource(largeResourceSeed, largeResourceSize);
+            byte[] buf = new byte[1024*1024];
+            Buffer vBuf = Buffer.buffer(buf);
+            rsp.drainHandler(event -> {
+                int readLen;
+                logger.debug("pump()");
+                try {
+                    readLen = largeResource.read(buf);
+                } catch (IOException e) {
+                    throw new RuntimeException("Not impl", e);
+                }
+                if (readLen == -1){
+                    logger.info("response.end()");
+                    rsp.end();
+                }
+                vBuf.setBytes(0, buf, 0, readLen);
+                rsp.write(vBuf);
+            });
+        });
+        httpServer.listen(7011, upstreamHost); // TODO: Would be nice to use dynamic port.
+        upstreamPort = httpServer.actualPort();
+        // Then register that server as a static route.
+        putCustomUpstreamRoute();
+    }
+
+    @AfterClass
+    public static void after() throws IOException {
+        httpServer.close();
+        if (origRules != null) {
+            // Restore routing rules.
+            customPut(routingRulesPath, "application/json", new ByteArrayInputStream(origRules.getBytes(UTF_8)));
+        }
     }
 
     @Test
     public void gateleenMustProperlyCloseItsDownstreamResponse() throws InterruptedException, IOException {
-        RestAssured.basePath = "/";
-        logger.info( "Setup a large resource which we can download during the test." );
-        customPut(largeResourcePath, largeResourceContentType,
-                newLargeResource(largeResourceSeed, largeResourceSize));
 
-        // Initiate a GET request to our large-resource.
+        // Initiate a GET request to our large-resource. But give gateleen some time to update rules beforehand.
+        Thread.sleep(42);
         final InputStream body = newLazyResponseStream(largeResourcePath, gateleenGracePeriod + 12_000);
 
         // The response stream now has started (but we don't consume anything yet). So
@@ -78,24 +132,22 @@ public class RuleUpdateTest {
         // deliver any further data on that stream (no matter how long we wait).
         {
             long bytesSoFar = 0;
-            byte[] buf = new byte[128 * 1024];
+            byte[] buf = new byte[512 * 1024];
             while (true) {
                 int len = body.read(buf);
                 if (len == -1) {
                     break; // EOF
                 }
                 bytesSoFar += len;
-                logger.debug(String.format("Read %9d of %9d bytes (%3d%%)", bytesSoFar, largeResourceSize, bytesSoFar*100 / largeResourceSize));
+                logger.trace(String.format("Read %9d of %9d bytes (%3d%%)", bytesSoFar, largeResourceSize, bytesSoFar*100 / largeResourceSize));
             }
-            logger.info("EOF reached on response. Did read {} bytes.", bytesSoFar);
+            logger.info("EOF reached after {} bytes of expected {} bytes.", bytesSoFar, largeResourceSize);
+            Assert.assertEquals(largeResourceSize, bytesSoFar);
         }
     }
 
     @Test
     public void errorInStreamMustBeRecognizableOnClient() throws IOException, InterruptedException {
-        RestAssured.basePath = "/";
-        logger.info( "Setup a large resource which we can download during the test." );
-        RestAssured.given().header("Content-Type", "application/octet-stream").body(newLargeResource(largeResourceSeed, largeResourceSize)).put(largeResourcePath);
 
         // Initiate a GET request to our large-resource.
         final InputStream body = newLazyResponseStream(largeResourcePath, gateleenGracePeriod + 12_000);
@@ -132,14 +184,14 @@ public class RuleUpdateTest {
                     int cExp = referenceSrc.read();
                     int cAct = (dload[i] & 0xFF);
                     if (cExp != cAct) { // Only to log some debugging info.
-                        int offset = bytesSoFar + i > 5 ? bytesSoFar + i - 5 : 0;
+                        int offset = i > 5 ? bytesSoFar + i - 5 : bytesSoFar;
                         int snipLength = Math.min(42, readLen - i); // Print maximally
-                        logger.debug("Stream at offset={} length={} is: '{}'",
+                       logger.debug("Stream at offset={} length={} is: '{}'",
                                 offset, snipLength, new String(dload, offset - bytesSoFar, snipLength, ISO_8859_1));
                     }
                     Assert.assertEquals("Stream must not contain incorrect data", cExp, cAct);
                 }
-                logger.debug(String.format("Read %9d of %9d bytes (%3d%%)", bytesSoFar, largeResourceSize, bytesSoFar*100 / largeResourceSize));
+                logger.trace(String.format("Read %9d of %9d bytes (%3d%%)", bytesSoFar, largeResourceSize, bytesSoFar*100 / largeResourceSize));
             }
             logger.info("EOF reached on response.");
         }
@@ -191,7 +243,7 @@ public class RuleUpdateTest {
      *
      * So just wrote the HTTP PUT in pure java. And guess what: Just works.
      */
-    private void customPut(String path, String contentType, InputStream body) throws IOException {
+    private static void customPut(String path, String contentType, InputStream body) throws IOException {
         Assert.assertTrue(path.startsWith("/"));
         HttpURLConnection connection = (HttpURLConnection) new URL(baseURI + ":" + port + path).openConnection();
         connection.setDoOutput(true);
@@ -204,7 +256,7 @@ public class RuleUpdateTest {
         while (true) {
             int readLen = body.read(buf);
             if (readLen == -1) break; // EOF
-            snk.write(buf);
+            snk.write(buf, 0, readLen);
         }
         snk.close();
         Assert.assertEquals(200, connection.getResponseCode());
@@ -217,6 +269,26 @@ public class RuleUpdateTest {
         Response rsp = RestAssured.get(routingRulesPath);
         Assert.assertEquals(200, rsp.statusCode());
         RestAssured.given().header("Content-Type", "application/json").body(rsp.body().print()).put(routingRulesPath);
+    }
+
+    private static void putCustomUpstreamRoute() throws IOException {
+        if (origRules != null) {
+            logger.warn("custom rule already installed.");
+            return;
+        }
+        // Get rules
+        Response rsp = RestAssured.get(routingRulesPath);
+        Assert.assertEquals(200, rsp.statusCode());
+
+        // Prepend our custom rule for our upstream server. Kind like a hack but
+        // playground has no route configured to a external host.
+        origRules = rsp.body().print();
+        String customRules = origRules.replaceFirst("^\\{", "{\"" + upstreamPath + "/(.*)\": {" +
+                "    \"url\": \"http://" + upstreamHost + ":" + upstreamPort + "/\\$1\"" +
+                "},");
+
+        // Push it back to re-configure gateleen server.
+        customPut(routingRulesPath, "application/json", new ByteArrayInputStream(customRules.getBytes(UTF_8)));
     }
 
 }
