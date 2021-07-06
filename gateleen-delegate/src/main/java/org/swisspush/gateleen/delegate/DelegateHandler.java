@@ -97,7 +97,7 @@ public class DelegateHandler implements Refreshable, LoggableResource {
         this.doneHandler = doneHandler;
 
         String delegatesSchema = ResourcesUtils.loadResource("gateleen_delegate_schema_delegates", true);
-        this.delegateFactory = new DelegateFactory(monitoringHandler,selfClient,properties,delegatesSchema);
+        this.delegateFactory = new DelegateFactory(new DelegateClientRequestCreator(selfClient), properties, delegatesSchema);
 
         delegateNamePattern = Pattern.compile(delegatesUri + "([^/]+)(/" + DEFINITION_RESOURCE + "|/"+ EXECUTION_RESOURCE + ".*" + "|/?)");
 
@@ -166,7 +166,7 @@ public class DelegateHandler implements Refreshable, LoggableResource {
                             registerDelegate(delegateBody, key);
                         }
                         else {
-                            LOG.warn("Could not get URL '" + delegatesUri + key + "/definition'.");
+                            LOG.warn("Could not get URL '{}/definition'.", delegatesUri + key);
                         }
 
                         // send a ready flag
@@ -204,7 +204,7 @@ public class DelegateHandler implements Refreshable, LoggableResource {
                     if (buffer != null) {
                         registerDelegate(buffer, messages[MESSAGE_NAME]);
                     } else {
-                        LOG.warn("Could not get URL '" + messages[MESSAGE_URL] + "' (getting delegate).");
+                        LOG.warn("Could not get URL '{}' (getting delegate).", messages[MESSAGE_URL]);
                     }
                 });
             }
@@ -354,7 +354,7 @@ public class DelegateHandler implements Refreshable, LoggableResource {
 
             // Registration
             if(request.method() == HttpMethod.PUT && request.uri().endsWith(DEFINITION_RESOURCE)) {
-                LOG.debug("registering delegate");
+                LOG.debug("registering delegate={}", delegateName);
                 handleDelegateRegistration(request);
                 return true;
             }
@@ -364,14 +364,14 @@ public class DelegateHandler implements Refreshable, LoggableResource {
 
                 // Execution
                 if (request.uri().contains(EXECUTION_RESOURCE)) {
-                    LOG.debug("executing delegate");
+                    LOG.debug("executing delegate={}", delegateName);
                     handleDelegateExecution(request);
                     return true;
                 }
 
                 // Unregistration?
                 if (request.method() == HttpMethod.DELETE) {
-                    LOG.debug("unregister delegate");
+                    LOG.debug("unregister delegate={}", delegateName);
                     handleDelegateUnregistration(request);
                     return true;
                 }

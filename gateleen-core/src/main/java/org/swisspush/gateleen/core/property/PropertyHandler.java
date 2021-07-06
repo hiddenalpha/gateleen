@@ -93,7 +93,7 @@ public class PropertyHandler {
      * @param propertyName
      */
     public void addProperty(String url, String value, String propertyName) {
-        log.info("register property handler for property '" + propertyName + "' on url '" + url + "' and value id '" + value + "'.");
+        log.info("register property handler for property '{}' on url '{}' and value id '{}'.", propertyName, url, value);
         String adaptedUrl = serverUri + url;
 
         if (propertyUrls.containsKey(adaptedUrl)) {
@@ -115,6 +115,7 @@ public class PropertyHandler {
     public boolean handle(final HttpServerRequest request) {
         // Only process PUT requests and request, which URL can be found
         if (request.method().equals(HttpMethod.PUT) && propertyUrls.containsKey(request.uri())) {
+            log.info("Got a request to update propertyUrl=[{}]", request.uri());
             // process body
             request.bodyHandler(buffer -> {
                 Map<String, String> idProperties = propertyUrls.get(request.uri());
@@ -131,6 +132,8 @@ public class PropertyHandler {
                         // refresh all refreshables
                         refresh();
 
+                        log.info("Updated property=[{}] with value=[{}] triggered by propertyUrl=[{}]", keyId, body.getValue(keyId), request.uri());
+
                         // break the process
                         found = true;
                         break;
@@ -138,7 +141,7 @@ public class PropertyHandler {
                 }
 
                 if (!found) {
-                    log.warn("id for the request PUT " + request.uri() + " could not be found: " + body.toString());
+                    log.warn("id for the request PUT {} could not be found: {}", request.uri(), body.toString());
                 }
 
                 // everythin is fine
