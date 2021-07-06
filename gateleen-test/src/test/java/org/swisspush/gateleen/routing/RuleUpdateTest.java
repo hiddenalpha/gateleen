@@ -38,7 +38,7 @@ public class RuleUpdateTest {
 
     // Mocked upstream server.
     private static final String upstreamHost = "localhost";
-    private static int upstreamPort;
+    private static final int upstreamPort = 7011;
     private static final String upstreamPath = "/playground/server/" + RuleUpdateTest.class.getSimpleName() + "/the-other-host";
     private static HttpServer httpServer;
 
@@ -46,7 +46,6 @@ public class RuleUpdateTest {
     private static final int largeResourceSeed = 42 * 42;
     private static final String largeResourcePath = upstreamPath + "/my-large-resource.bin";
     private static final int largeResourceSize = 16 * 1024 * 1024; // <- Must be larger than all network buffers together.
-    private static final String largeResourceContentType = "application/javascript";
 
     public RuleUpdateTest() {
         try {
@@ -65,7 +64,7 @@ public class RuleUpdateTest {
         RestAssured.basePath = "/";
         logger.info("Testing against: " + RestAssured.baseURI + ":" + RestAssured.port);
 
-        // Setup a custom upstream server we can use to download our resource from (through gateleen).
+        // Setup a custom upstream server we can use to download our resource (through gateleen).
         httpServer = Vertx.vertx().createHttpServer().requestHandler(req -> {
             HttpServerResponse rsp = req.response();
             req.exceptionHandler(event -> {
@@ -92,8 +91,7 @@ public class RuleUpdateTest {
                 rsp.write(vBuf);
             });
         });
-        httpServer.listen(7011, upstreamHost); // TODO: Would be nice to use dynamic port.
-        upstreamPort = httpServer.actualPort();
+        httpServer.listen(upstreamPort, upstreamHost);
         // Then register that server as a static route.
         putCustomUpstreamRoute();
     }
@@ -104,6 +102,7 @@ public class RuleUpdateTest {
         if (origRules != null) {
             // Restore routing rules.
             customPut(routingRulesPath, "application/json", new ByteArrayInputStream(origRules.getBytes(UTF_8)));
+            origRules = null;
         }
     }
 
