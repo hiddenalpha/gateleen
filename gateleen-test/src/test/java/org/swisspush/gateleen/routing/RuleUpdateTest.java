@@ -63,16 +63,9 @@ public class RuleUpdateTest {
 
     @BeforeClass
     public static void config() throws IOException {
-        RestAssured.port = AbstractTest.MAIN_PORT;
+        RestAssured.port = port;
         RestAssured.registerParser("application/json; charset=utf-8", Parser.JSON);
         RestAssured.defaultParser = Parser.JSON;
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-                .addHeader("content-type", "application/json")
-                .setPort(AbstractTest.MAIN_PORT)
-                .setBasePath(AbstractTest.ROOT)
-                .build();
-        RestAssured.requestSpecification.baseUri("http://localhost:" + AbstractTest.MAIN_PORT);
-        RestAssured.requestSpecification.basePath(AbstractTest.ROOT);
 
         logger.info("Testing against: " + RestAssured.baseURI + ":" + RestAssured.port);
 
