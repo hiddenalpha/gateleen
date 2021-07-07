@@ -1,6 +1,8 @@
 package org.swisspush.gateleen.routing;
 
 import com.jayway.restassured.RestAssured;
+import com.jayway.restassured.builder.RequestSpecBuilder;
+import com.jayway.restassured.parsing.Parser;
 import com.jayway.restassured.response.Response;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -12,6 +14,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.swisspush.gateleen.AbstractTest;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -33,6 +36,7 @@ public class RuleUpdateTest {
     private static final int port = 7012;
     private static final String baseURI = "http://" + host;
     private static final String routingRulesPath = "/playground/server/admin/v1/routing/rules";
+    private static final Vertx vertx = Vertx.vertx();
     private final int gateleenGracePeriod;
     private static String origRules;
 
@@ -59,13 +63,21 @@ public class RuleUpdateTest {
 
     @BeforeClass
     public static void config() throws IOException {
-        RestAssured.baseURI = baseURI;
-        RestAssured.port = port;
-        RestAssured.basePath = "/";
+        RestAssured.port = AbstractTest.MAIN_PORT;
+        RestAssured.registerParser("application/json; charset=utf-8", Parser.JSON);
+        RestAssured.defaultParser = Parser.JSON;
+        RestAssured.requestSpecification = new RequestSpecBuilder()
+                .addHeader("content-type", "application/json")
+                .setPort(AbstractTest.MAIN_PORT)
+                .setBasePath(AbstractTest.ROOT)
+                .build();
+        RestAssured.requestSpecification.baseUri("http://localhost:" + AbstractTest.MAIN_PORT);
+        RestAssured.requestSpecification.basePath(AbstractTest.ROOT);
+
         logger.info("Testing against: " + RestAssured.baseURI + ":" + RestAssured.port);
 
         // Setup a custom upstream server we can use to download our resource (through gateleen).
-        httpServer = Vertx.vertx().createHttpServer().requestHandler(req -> {
+        httpServer = vertx.createHttpServer().requestHandler(req -> {
             HttpServerResponse rsp = req.response();
             req.exceptionHandler(event -> {
                 logger.info("exceptionHandler()");
