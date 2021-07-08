@@ -306,7 +306,11 @@
                             <!-- Sets the VM argument line used when unit tests are run. -->
                             <argLine>${surefireArgLine}</argLine>
                             <excludes>
+                                <!-- TODO: Get rid of those ugly explicit-excludes. This kludge just did cost me
+                                           several hours of travis-debugging. IMHO this should be done using
+                                           junit categories -->
                                 <exclude>org/swisspush/gateleen/hookjs/**</exclude>
+                                <exclude>org/swisspush/gateleen/routing/RuleUpdateTest</exclude>
                             </excludes>
                             <includes>
                                 <include>org/swisspush/gateleen/**</include>
