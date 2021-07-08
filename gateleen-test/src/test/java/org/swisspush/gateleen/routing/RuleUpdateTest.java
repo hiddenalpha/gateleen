@@ -41,7 +41,7 @@ public class RuleUpdateTest {
     private static String origRules;
 
     // Mocked upstream server.
-    private static final String upstreamHost = "localhost";
+    private static final String upstreamHost = "0.0.0.0"; // <- "localhost" seems not to work on travis
     private static final int upstreamPort = 7011;
     private static final String upstreamPath = "/playground/server/" + RuleUpdateTest.class.getSimpleName() + "/the-other-host";
     private static HttpServer httpServer;
@@ -67,7 +67,8 @@ public class RuleUpdateTest {
         RestAssured.registerParser("application/json; charset=utf-8", Parser.JSON);
         RestAssured.defaultParser = Parser.JSON;
 
-        logger.info("Testing against: " + RestAssured.baseURI + ":" + RestAssured.port);
+        //logger.info("Testing against: {}:{}", RestAssured.baseURI, RestAssured.port);
+        System.out.println("Testing against: " + RestAssured.baseURI + ":" + RestAssured.port); // <- Fix travis logging
 
         // Setup a custom upstream server we can use to download our resource (through gateleen).
         httpServer = vertx.createHttpServer().requestHandler(req -> {
@@ -98,6 +99,7 @@ public class RuleUpdateTest {
             });
         });
         httpServer.listen(upstreamPort, upstreamHost);
+        logger.info("Mock httpServer.listen( {}, \"{}\")", upstreamPort, upstreamHost);
         // Then register that server as a static route.
         putCustomUpstreamRoute();
     }
@@ -273,7 +275,7 @@ public class RuleUpdateTest {
     private void triggerRoutingRulesUpdate() {
         Response rsp = RestAssured.get(routingRulesPath);
         Assert.assertEquals(200, rsp.statusCode());
-        RestAssured.given().header("Content-Type", "application/json").body(rsp.body().print()).put(routingRulesPath);
+        RestAssured.given().header("Content-Type", "application/json").body(rsp.body().asString()).put(routingRulesPath);
     }
 
     private static void putCustomUpstreamRoute() throws IOException {
@@ -287,7 +289,7 @@ public class RuleUpdateTest {
 
         // Prepend our custom rule for our upstream server. Kind like a hack but
         // playground has no route configured to a external host.
-        origRules = rsp.body().print();
+        origRules = rsp.body().asString();
         String customRules = origRules.replaceFirst("^\\{", "{\"" + upstreamPath + "/(.*)\": {" +
                 "    \"url\": \"http://" + upstreamHost + ":" + upstreamPort + "/\\$1\"" +
                 "},");

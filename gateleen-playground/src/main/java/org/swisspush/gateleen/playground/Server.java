@@ -328,6 +328,7 @@ public class Server extends AbstractVerticle {
                 eventBusHandler.install(vertxRouter);
                 vertxRouter.route().handler(routingContextHandlerrNew);
                 mainServer.requestHandler(vertxRouter::accept);
+                System.out.println("[DEBUG] mainServer.listen( " + mainPort + " )"); // TODO remove
                 mainServer.listen(mainPort);
             }
         });
