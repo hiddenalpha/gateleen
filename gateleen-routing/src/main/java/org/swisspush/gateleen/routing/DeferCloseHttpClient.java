@@ -111,7 +111,7 @@ public class DeferCloseHttpClient implements HttpClient {
             // Still use a timer. Because who knows.
             vertx.setTimer(CLOSE_ANYWAY_AFTER_MS, timerId -> {
                 if (doCloseWhenDone) {
-                    logger.warn("RequestResponse cycle still running after {} seconds. Will close now to prevent resource leaks.", CLOSE_ANYWAY_AFTER_MS);
+                    logger.warn("RequestResponse cycle still running after {} ms. Will close now to prevent resource leaks.", CLOSE_ANYWAY_AFTER_MS);
                     doCloseWhenDone = false;
                     delegate.close();
                 }
