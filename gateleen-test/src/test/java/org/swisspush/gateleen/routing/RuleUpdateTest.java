@@ -8,10 +8,12 @@ import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.AbstractTest;
@@ -29,6 +31,7 @@ import static java.nio.charset.StandardCharsets.ISO_8859_1;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 
+@RunWith(VertxUnitRunner.class)
 public class RuleUpdateTest {
 
     private static final Logger logger = LoggerFactory.getLogger(RuleUpdateTest.class);
@@ -50,7 +53,6 @@ public class RuleUpdateTest {
     private static final int largeResourceSeed = 42 * 42;
     private static final String largeResourcePath = upstreamPath + "/my-large-resource.bin";
     private static final int largeResourceSize = 16 * 1024 * 1024; // <- Must be larger than all network buffers together.
-    private static final boolean skipUiTests = Boolean.parseBoolean(System.getProperty("skipUiTests"));
 
     public RuleUpdateTest() {
         try {
@@ -64,8 +66,6 @@ public class RuleUpdateTest {
 
     @BeforeClass
     public static void config() throws IOException {
-        logger.debug("System.getProperty(\"skipUiTests\") -> {}", System.getProperty("skipUiTests"));
-        if(skipUiTests) return;
         RestAssured.port = port;
         RestAssured.registerParser("application/json; charset=utf-8", Parser.JSON);
         RestAssured.defaultParser = Parser.JSON;
@@ -108,7 +108,6 @@ public class RuleUpdateTest {
 
     @AfterClass
     public static void after() throws IOException {
-        if(skipUiTests) return;
         httpServer.close();
         if (origRules != null) {
             // Restore routing rules.
@@ -119,7 +118,6 @@ public class RuleUpdateTest {
 
     @Test
     public void gateleenMustProperlyCloseItsDownstreamResponse() throws InterruptedException, IOException {
-        if(skipUiTests) return;
 
         // Initiate a GET request to our large-resource. But give gateleen some time to update rules beforehand.
         Thread.sleep(42);
@@ -159,7 +157,6 @@ public class RuleUpdateTest {
 
     @Test
     public void errorInStreamMustBeRecognizableOnClient() throws IOException, InterruptedException {
-        if(skipUiTests) return;
 
         // Initiate a GET request to our large-resource.
         final InputStream body = newLazyResponseStream(largeResourcePath, gateleenGracePeriod + 12_000);
