@@ -77,7 +77,7 @@ public class RuleUpdateTest {
             });
             rsp.setChunked(true);
             InputStream largeResource = newLargeResource(largeResourceSeed, largeResourceSize);
-            byte[] buf = new byte[1024*1024];
+            byte[] buf = new byte[1024 * 1024];
             Buffer vBuf = Buffer.buffer(buf);
             rsp.drainHandler(event -> {
                 int readLen;
@@ -234,10 +234,10 @@ public class RuleUpdateTest {
 
         final URL url = new URL(urlStr);
         final HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setDoInput( true );
+        connection.setDoInput(true);
         connection.setReadTimeout(readTimeoutMs);
-        connection.setRequestProperty( "Method" , method );
-        connection.setRequestProperty( "Accept" , "application/octet-stream" ); // NO! I don't wanna your index.html ...
+        connection.setRequestProperty("Method", method);
+        connection.setRequestProperty("Accept", "application/octet-stream"); // NO! I don't wanna your index.html ...
 
         // Response
         Assert.assertEquals(method + " " + urlStr, 200, connection.getResponseCode());

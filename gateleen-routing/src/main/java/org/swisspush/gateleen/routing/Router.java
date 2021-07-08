@@ -150,19 +150,19 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
      * around with such an amount of arguments.
      */
     Router(Vertx vertx,
-                  final ResourceStorage storage,
-                  final Map<String, Object> properties,
-                  LoggingResourceManager loggingResourceManager,
-                  MonitoringHandler monitoringHandler,
-                  HttpClient selfClient,
-                  String serverPath,
-                  String rulesPath,
-                  String userProfilePath,
-                  JsonObject info,
-                  int storagePort,
-                  Set<DefaultRouteType> defaultRouteTypes,
-                  HttpClientFactory httpClientFactory,
-                  Handler<Void>... doneHandlers) {
+           final ResourceStorage storage,
+           final Map<String, Object> properties,
+           LoggingResourceManager loggingResourceManager,
+           MonitoringHandler monitoringHandler,
+           HttpClient selfClient,
+           String serverPath,
+           String rulesPath,
+           String userProfilePath,
+           JsonObject info,
+           int storagePort,
+           Set<DefaultRouteType> defaultRouteTypes,
+           HttpClientFactory httpClientFactory,
+           Handler<Void>... doneHandlers) {
         this.storage = storage;
         this.properties = properties;
         this.loggingResourceManager = loggingResourceManager;
