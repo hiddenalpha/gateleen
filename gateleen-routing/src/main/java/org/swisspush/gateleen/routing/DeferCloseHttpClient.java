@@ -156,11 +156,6 @@ public class DeferCloseHttpClient implements HttpClient {
     ///////////////////////////////////////////////////////////////////////////////
     // Below are only the remaining methods which all just delegate.
     ///////////////////////////////////////////////////////////////////////////////
-    //
-    // TODO delete, just a handy vi macro.
-    // jf(F wv$F)"ayj0Sreturn delegate.a;V:s:\((\|,\)[^,]\+ \([A-Za-z0-9_]\+\):\1 \2:g
-    //  /@Override
-    //
 
     @Override
     public HttpClientRequest request(HttpMethod method, RequestOptions options) {

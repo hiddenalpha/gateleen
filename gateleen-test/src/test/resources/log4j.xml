@@ -18,9 +18,4 @@
         <level value="WARN"/>
         <appender-ref ref="consoleAppender"/>
     </root>
-
-    <logger name="org.swisspush.gateleen.routing.RuleUpdateTest">
-        <level value="DEBUG"/>
-    </logger>
-
 </log4j:configuration>

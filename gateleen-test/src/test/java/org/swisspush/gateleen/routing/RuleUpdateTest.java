@@ -39,7 +39,7 @@ public class RuleUpdateTest {
     private static String origRules;
 
     // Mocked upstream server.
-    private static final String upstreamHost = "0.0.0.0"; // <- "localhost" seems not to work on travis
+    private static final String upstreamHost = "localhost";
     private static final int upstreamPort = 7011;
     private static final String upstreamPath = "/playground/server/" + RuleUpdateTest.class.getSimpleName() + "/the-other-host";
     private static HttpServer httpServer;
