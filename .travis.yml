@@ -17,7 +17,7 @@ before_install:
   - wget https://chromedriver.storage.googleapis.com/2.21/chromedriver_linux64.zip
   - unzip chromedriver_linux64.zip -d gateleen-test/src/test/resources/
 install:
-    - mvn install -Dmaven.javadoc.skip=true -PpublicRepos -B -V
+    - mvn install -Dmaven.javadoc.skip=true -DskipTests -PpublicRepos -B -V
 before_script:
   - git config --global user.email "swisspush@post.ch"
   - git config --global user.name "Travis-CI"
@@ -26,7 +26,7 @@ script:
   # TODO: Instead of sleeping, should we rather make sure that the server Playground actually is running?
    - sleep 5s
    - mvn deploy -PuploadStaticFiles
-   - mvn install -PuiIntegrationTests
+   - mvn test -PuiIntegrationTests -Dtest=RuleUpdateTest -DfailIfNoTests=false
    - kill $(ps -ef | grep playground | awk '{ print $2 }')
    - mvn install -PnonUiIntegrationTests
    # the exported credentials are needed in the maybe-release.sh
