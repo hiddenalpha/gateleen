@@ -50,6 +50,7 @@ public class RuleUpdateTest {
     private static final int largeResourceSeed = 42 * 42;
     private static final String largeResourcePath = upstreamPath + "/my-large-resource.bin";
     private static final int largeResourceSize = 16 * 1024 * 1024; // <- Must be larger than all network buffers together.
+    private static final boolean skipUiTests = Boolean.parseBoolean(System.getProperty("skipUiTests"));
 
     public RuleUpdateTest() {
         try {
@@ -63,12 +64,13 @@ public class RuleUpdateTest {
 
     @BeforeClass
     public static void config() throws IOException {
+        logger.debug("System.getProperty(\"skipUiTests\") -> {}", System.getProperty("skipUiTests"));
+        if(skipUiTests) return;
         RestAssured.port = port;
         RestAssured.registerParser("application/json; charset=utf-8", Parser.JSON);
         RestAssured.defaultParser = Parser.JSON;
 
-        //logger.info("Testing against: {}:{}", RestAssured.baseURI, RestAssured.port);
-        System.out.println("Testing against: " + RestAssured.baseURI + ":" + RestAssured.port); // <- Fix travis logging
+        logger.info("Testing against: {}:{}", RestAssured.baseURI, RestAssured.port);
 
         // Setup a custom upstream server we can use to download our resource (through gateleen).
         httpServer = vertx.createHttpServer().requestHandler(req -> {
@@ -106,6 +108,7 @@ public class RuleUpdateTest {
 
     @AfterClass
     public static void after() throws IOException {
+        if(skipUiTests) return;
         httpServer.close();
         if (origRules != null) {
             // Restore routing rules.
@@ -116,6 +119,7 @@ public class RuleUpdateTest {
 
     @Test
     public void gateleenMustProperlyCloseItsDownstreamResponse() throws InterruptedException, IOException {
+        if(skipUiTests) return;
 
         // Initiate a GET request to our large-resource. But give gateleen some time to update rules beforehand.
         Thread.sleep(42);
@@ -155,6 +159,7 @@ public class RuleUpdateTest {
 
     @Test
     public void errorInStreamMustBeRecognizableOnClient() throws IOException, InterruptedException {
+        if(skipUiTests) return;
 
         // Initiate a GET request to our large-resource.
         final InputStream body = newLazyResponseStream(largeResourcePath, gateleenGracePeriod + 12_000);
