@@ -6,6 +6,7 @@ import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
 import io.vertx.core.http.impl.headers.VertxHttpHeaders;
+import murks.SDCISA_7235.TimeTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.util.StatusCode;
@@ -200,6 +201,7 @@ public class LocalHttpServerResponse extends BufferBridge implements FastFailHtt
 
     @Override
     public HttpServerResponse write(Buffer chunk) {
+        TimeTrace.Zone zone = TimeTrace.zoneEnter("gateleen.LocalHttpServerResponse.write(Buffer)");
         // emulate Vertx's HttpServerResponseImpl
         if (!chunked && !headers.contains(HttpHeaders.CONTENT_LENGTH)) {
             IllegalStateException ex = new IllegalStateException("You must set the Content-Length header to be the total size of the message "
@@ -209,10 +211,12 @@ public class LocalHttpServerResponse extends BufferBridge implements FastFailHtt
         }
         ensureBound();
         doWrite(chunk);
+        zone.zoneExit();
         return this;
     }
 
     private void ensureBound() {
+        TimeTrace.Zone zone = TimeTrace.zoneEnter("gateleen.LocalHttpServerResponse.ensureBound()");
         if (!bound) {
             bound = true;
             if (statusCode == 0) {
@@ -224,6 +228,7 @@ public class LocalHttpServerResponse extends BufferBridge implements FastFailHtt
             }
             responseHandler.handle(clientResponse);
         }
+        zone.zoneExit();
     }
 
     @Override
