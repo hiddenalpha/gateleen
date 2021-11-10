@@ -1,5 +1,6 @@
 package org.swisspush.gateleen.expansion;
 
+import murks.SDCISA_7235.TimeTrace;
 import org.swisspush.gateleen.core.util.*;
 import org.swisspush.gateleen.core.util.ExpansionDeltaUtil.CollectionResourceContainer;
 import io.vertx.core.buffer.Buffer;
@@ -112,6 +113,7 @@ public class RecursiveExpansionRootHandler extends RecursiveRootHandlerBase {
                 log.trace("end response with content");
             }
             req.response().end(responseObject.toString());
+            TimeTrace.finalizeResponse();
         }
     }
 

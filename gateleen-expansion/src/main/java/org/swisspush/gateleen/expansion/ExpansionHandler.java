@@ -10,6 +10,7 @@ import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import murks.SDCISA_7235.TimeTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
@@ -291,6 +292,7 @@ public class ExpansionHandler implements RuleChangesObserver{
      * @param recursiveHandlerType - the desired typ of the recursion functionality
      */
     private void handleExpansionRequest(final HttpServerRequest req, final RecursiveHandlerFactory.RecursiveHandlerTypes recursiveHandlerType) {
+        TimeTrace.Zone zone = TimeTrace.zoneEnter("ExpansionHandler.handleExpansionRequest(...)");
         req.pause();
         Logger log = RequestLoggerFactory.getLogger(ExpansionHandler.class, req);
 
@@ -348,6 +350,7 @@ public class ExpansionHandler implements RuleChangesObserver{
             }
 
             cRes.bodyHandler(data -> {
+                TimeTrace.Zone zone_cRes_bodyHandler = TimeTrace.zoneEnter("ExpansionHandler  cRes.bodyHandler(()->...})");
 
                     /*
                      * TODO:
@@ -369,6 +372,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                 makeResourceSubRequest(targetUri, req, finalExpandLevel, new AtomicInteger(),
                         recursiveHandlerType,
                         RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), true);
+                zone_cRes_bodyHandler.zoneExit();
             });
             cRes.exceptionHandler(ExpansionDeltaUtil.createResponseExceptionHandler(req, targetUri, ExpansionHandler.class));
         });
@@ -405,6 +409,7 @@ public class ExpansionHandler implements RuleChangesObserver{
             log.trace("resume request");
         }
         req.resume();
+        zone.zoneExit();
     }
 
     private Integer extractExpandParamValue(final HttpServerRequest request, final Logger log){
@@ -471,6 +476,7 @@ public class ExpansionHandler implements RuleChangesObserver{
     }
 
     private void makeStorageExpandRequest(final String targetUri, final List subResourceNames, final HttpServerRequest req, final DeltaHandler<ResourceNode> handler){
+        TimeTrace.Zone zone = TimeTrace.zoneEnter("ExpansionHandler.makeStorageExpandRequest(...)");
         Logger log = RequestLoggerFactory.getLogger(ExpansionHandler.class, req);
         final HttpClientRequest cReq = httpClient.request(HttpMethod.POST, targetUri + "?storageExpand=true", cRes -> {
             cRes.bodyHandler(data -> {
@@ -503,6 +509,7 @@ public class ExpansionHandler implements RuleChangesObserver{
         cReq.write(payload);
 
         cReq.end();
+        zone.zoneExit();
     }
 
     /**
@@ -517,6 +524,7 @@ public class ExpansionHandler implements RuleChangesObserver{
      * @param collection - indicates if the just passed targetUri belongs to a collection or a resource
      */
     private void makeResourceSubRequest(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, final boolean collection) {
+        TimeTrace.Zone zone = TimeTrace.zoneEnter("ExpansionHandler.makeResourceSubRequest(...)");
 
         Logger log = RequestLoggerFactory.getLogger(ExpansionHandler.class, req);
 
@@ -534,6 +542,7 @@ public class ExpansionHandler implements RuleChangesObserver{
 
         subRequestCounter.incrementAndGet();
 
+        TimeTrace.Zone zone_httpClient_request = TimeTrace.zoneEnter("ExpansionHandler.makeResourceSubRequest  httpClient.request(HttpMethod.GET, targetUri, ...)");
         // request target uri
         final HttpClientRequest cReq = httpClient.request(HttpMethod.GET, targetUri, cRes -> {
 
@@ -581,6 +590,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                 }
             });
         });
+        zone_httpClient_request.zoneExit();
 
         if (log.isTraceEnabled()) {
             log.trace("set the cReq headers for the subRequest");
@@ -596,7 +606,10 @@ public class ExpansionHandler implements RuleChangesObserver{
         if (log.isTraceEnabled()) {
             log.trace("end the cReq for the subRequest");
         }
+        TimeTrace.Zone zone_cReq_end = TimeTrace.zoneEnter("ExpansionHandler  cReq.end()");
         cReq.end();
+        zone_cReq_end.zoneExit();
+        zone.zoneExit();
     }
 
     /**

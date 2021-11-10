@@ -15,6 +15,7 @@ import io.vertx.core.net.SocketAddress;
 import io.vertx.core.net.impl.SocketAddressImpl;
 import io.vertx.ext.auth.User;
 import io.vertx.ext.web.*;
+import murks.SDCISA_7235.TimeTrace;
 
 import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
@@ -527,10 +528,12 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
     }
 
     private void ensureBound() {
+        TimeTrace.Zone zone = TimeTrace.zoneEnter("LocalHttpClientRequest.ensureBound()");
         if(!bound) {
             bound = true;
             routingContextHandler.handle(routingContext);
         }
+        zone.zoneExit();
     }
 
     @Override

@@ -13,6 +13,7 @@ import io.vertx.core.http.impl.headers.VertxHttpHeaders;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
+import murks.SDCISA_7235.TimeTrace;
 import org.slf4j.Logger;
 import org.swisspush.gateleen.core.cors.CORSHandler;
 import org.swisspush.gateleen.core.http.HeaderFunctions;
@@ -87,6 +88,7 @@ public class StorageForwarder implements Handler<RoutingContext> {
         });
         ctx.request().endHandler(event -> eventBus.send(address, requestBuffer, new DeliveryOptions().setSendTimeout(10000),
                 (Handler<AsyncResult<Message<Buffer>>>) result -> {
+                    TimeTrace.Zone zone_eventBus_send = TimeTrace.zoneEnter("StorageForwarder  eventBus.send(...)");
                     HttpServerResponse response = ctx.response();
                     monitoringHandler.stopRequestMetricTracking(rule.getMetricName(), startTime, ctx.request().uri());
                     if (result.failed()) {
@@ -135,10 +137,17 @@ public class StorageForwarder implements Handler<RoutingContext> {
                                 response.setStatusMessage(statusMessage);
                             }
                         }
+
+                        //TimeTrace.Zone zone_buffer = TimeTrace.zoneEnter("StorageForwarder  buffer.getBuffer(4 + headerLength, buffer.length())");
                         Buffer data = buffer.getBuffer(4 + headerLength, buffer.length());
+                        //zone_buffer.zoneExit();
+                        //TimeTrace.Zone zone_headers = TimeTrace.zoneEnter("StorageForwarder  response.headers().set(\"content-length\", \"\" + data.length())");
                         response.headers().set("content-length", "" + data.length());
+                        //zone_headers.zoneExit();
+                        //TimeTrace.Zone zone_rspWrite = TimeTrace.zoneEnter("StorageForwarder  response.write(data)");
                         response.write(data);
-                        response.end();
+                        //zone_rspWrite.zoneExit();
+
                         ResponseStatusCodeLogUtil.debug(ctx.request(), StatusCode.fromCode(statusCode), StorageForwarder.class);
                         if (responseHeaders != null) {
                             loggingHandler.appendResponsePayload(data, responseHeaders);
@@ -146,6 +155,7 @@ public class StorageForwarder implements Handler<RoutingContext> {
                         loggingHandler.log(ctx.request().uri(), ctx.request().method(), statusCode, statusMessage,
                                 requestHeaders, responseHeaders != null ? responseHeaders : new VertxHttpHeaders());
                     }
+                    zone_eventBus_send.zoneExit();
                 }));
     }
 
