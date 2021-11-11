@@ -71,7 +71,7 @@ public class BufferBridge {
     }
 
     protected void doEnd() {
-        //TimeTrace.Zone zone = TimeTrace.zoneEnter("gateleen.BufferBridge.doEnd()");
+        TimeTrace.Zone zone = TimeTrace.zoneEnter("gateleen.BufferBridge.doEnd()");
         ended = true;
         if(endHandler != null && queue.isEmpty()) {
             log.trace("Ending handler directly");
@@ -85,7 +85,7 @@ public class BufferBridge {
             endHandler = null;
             dataHandler = null;
         }
-        //zone.zoneExit();
+        zone.zoneExit();
     }
 
     public void setDataHandler(Handler<Buffer> dataHandler) {

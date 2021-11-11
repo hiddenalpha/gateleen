@@ -11,11 +11,18 @@ import static java.lang.System.nanoTime;
 
 public class TimeTrace {
 
-    private static Map<String, ZoneSummary> methods = new HashMap<>(1024);
+    private static Map<String, ZoneSummary> summaries;
     private static final AtomicReference<Thread> thrd = new AtomicReference<>();
+    private static final long RESET_IDLE_MS = 3000;
+    private static long prevMeasureMs = 0;
 
     public static Zone zoneEnter(String key) {
         ensureSameThread();
+        long now = System.currentTimeMillis();
+        if( (now - prevMeasureMs) > RESET_IDLE_MS ){
+            summaries = new HashMap<>(256);
+        }
+        prevMeasureMs = now;
         Zone zone = new Zone(key);
         zone.enterNs = nanoTime();
         zone.isEntered = true;
@@ -38,7 +45,7 @@ public class TimeTrace {
 
     public static void finalizeResponse() {
         ensureSameThread();
-        ZoneSummary[] zoneSummaryArr = methods.values().toArray(new ZoneSummary[0]);
+        ZoneSummary[] zoneSummaryArr = summaries.values().toArray(new ZoneSummary[0]);
         Arrays.sort(zoneSummaryArr, (a, b) -> Long.compare(b.totlExecTimeNs, a.totlExecTimeNs));
         System.out.println("\nTimeTracing from "+ LocalDateTime.now());
         for (ZoneSummary zoneSummary : zoneSummaryArr) {
@@ -57,7 +64,7 @@ public class TimeTrace {
         public void zoneExit() {
             ensureSameThread();
             if ( ! isEntered) throw new UnsupportedOperationException("TODO: Not impl yet");/*TODO*/
-            ZoneSummary zoneSummary = methods.computeIfAbsent(key, ZoneSummary::new);
+            ZoneSummary zoneSummary = summaries.computeIfAbsent(key, ZoneSummary::new);
             long methodLeave = nanoTime();
             long duration = methodLeave - enterNs;
             if (duration < 0) throw new UnsupportedOperationException("TODO: Not impl yet");/*TODO*/
