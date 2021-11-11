@@ -13,7 +13,7 @@ public class TimeTrace {
 
     private static Map<String, ZoneSummary> summaries;
     private static final AtomicReference<Thread> thrd = new AtomicReference<>();
-    private static final long RESET_IDLE_MS = 3000;
+    private static final long RESET_IDLE_MS = 30_000;
     private static long prevMeasureMs = 0;
 
     public static Zone zoneEnter(String key) {
@@ -44,14 +44,14 @@ public class TimeTrace {
     }
 
     public static void finalizeResponse() {
-        ensureSameThread();
-        ZoneSummary[] zoneSummaryArr = summaries.values().toArray(new ZoneSummary[0]);
-        Arrays.sort(zoneSummaryArr, (a, b) -> Long.compare(b.totlExecTimeNs, a.totlExecTimeNs));
-        System.out.println("\nTimeTracing from "+ LocalDateTime.now());
-        for (ZoneSummary zoneSummary : zoneSummaryArr) {
-            System.out.println(String.format("%9d - %s", zoneSummary.totlExecTimeNs/1000000, zoneSummary.key));
-        }
-        System.out.println();
+//        ensureSameThread();
+//        ZoneSummary[] zoneSummaryArr = summaries.values().toArray(new ZoneSummary[0]);
+//        Arrays.sort(zoneSummaryArr, (a, b) -> Long.compare(b.totlExecTimeNs, a.totlExecTimeNs));
+//        System.out.println("\nTimeTracing from "+ LocalDateTime.now());
+//        for (ZoneSummary zoneSummary : zoneSummaryArr) {
+//            System.out.println(String.format("%9d - %s", zoneSummary.totlExecTimeNs/1000000, zoneSummary.key));
+//        }
+//        System.out.println();
     }
 
     public static class Zone {

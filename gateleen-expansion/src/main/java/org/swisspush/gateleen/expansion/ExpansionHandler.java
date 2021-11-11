@@ -23,7 +23,10 @@ import org.swisspush.gateleen.routing.Rule;
 import org.swisspush.gateleen.routing.RuleFeaturesProvider;
 import org.swisspush.gateleen.routing.RuleProvider;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.EXPAND_ON_BACKEND;
@@ -705,23 +708,20 @@ public class ExpansionHandler implements RuleChangesObserver{
                 if(isStorageExpand(targetUri)){
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
-                    new SlicedLoop<>(vertx, subResourceNames.iterator(), new Destination<>() {
+                    new SlicedLoop<>(vertx, targetUri, subResourceNames.iterator(), new Destination<>() {
                         @Override public void onNext(String childName) {
                             log.trace("processing child resource: {}", childName);
 
                             // if the child is not a collection, we remove the parameter
                             boolean collection = isCollection(childName);
 
-                            vertx.setTimer(1, tmr -> {
-                                final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childName, SlashHandling.END_WITHOUT_SLASH);
-                                makeResourceSubRequest((collection ? collectionURI : removeParameters(collectionURI)), req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, collection);
-                            });
+                            final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childName, SlashHandling.END_WITHOUT_SLASH);
+                            makeResourceSubRequest((collection ? collectionURI : removeParameters(collectionURI)), req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, collection);
                         }
                         @Override public void onEnd() {
-                            log.debug("");
-                            int dbg = 0; // noop
+                            log.debug("onEnd()");
                         }
-                    }).run();
+                    }).resume();
                 }
             }
             // max. level reached

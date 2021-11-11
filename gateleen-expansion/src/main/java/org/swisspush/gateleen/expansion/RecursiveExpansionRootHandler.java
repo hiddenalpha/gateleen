@@ -112,7 +112,8 @@ public class RecursiveExpansionRootHandler extends RecursiveRootHandlerBase {
             if (log.isTraceEnabled()) {
                 log.trace("end response with content");
             }
-            req.response().end(responseObject.toString());
+            //req.response().end(responseObject.toString());
+            req.response().end("{\"DEBUG\":\"Gugseli Mock Response\"}");
             TimeTrace.finalizeResponse();
         }
     }
