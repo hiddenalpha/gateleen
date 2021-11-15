@@ -1,6 +1,5 @@
 package org.swisspush.gateleen.core.http;
 
-import murks.SDCISA_7235.TimeTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.vertx.core.Handler;
@@ -53,7 +52,6 @@ public class BufferBridge {
     }
 
     protected void doWrite(Buffer chunk) {
-        TimeTrace.Zone zone = TimeTrace.zoneEnter("gateleen.BufferBridge.doWrite(Buffer)");
         if(dataHandler != null && queue.isEmpty()) {
             log.trace("Writing directly to handler");
             try {
@@ -67,11 +65,9 @@ public class BufferBridge {
             log.trace("Writing to queue");
             queue.offer(chunk);
         }
-        zone.zoneExit();
     }
 
     protected void doEnd() {
-        TimeTrace.Zone zone = TimeTrace.zoneEnter("gateleen.BufferBridge.doEnd()");
         ended = true;
         if(endHandler != null && queue.isEmpty()) {
             log.trace("Ending handler directly");
@@ -85,7 +81,6 @@ public class BufferBridge {
             endHandler = null;
             dataHandler = null;
         }
-        zone.zoneExit();
     }
 
     public void setDataHandler(Handler<Buffer> dataHandler) {
