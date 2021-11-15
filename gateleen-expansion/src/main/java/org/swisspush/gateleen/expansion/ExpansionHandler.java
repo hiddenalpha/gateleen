@@ -695,13 +695,13 @@ public class ExpansionHandler implements RuleChangesObserver{
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
                     new SlicedLoop<>(vertx, req.uri(), subResourceNames.iterator(), new Destination<>() {
-                        @Override public void onNext(String childName) {
-                            log.trace("processing child resource: {}", childName);
+                        @Override public void onNext(String childResourceName) {
+                            log.trace("processing child resource: {}", childResourceName);
 
                             // if the child is not a collection, we remove the parameter
-                            boolean collection = isCollection(childName);
+                            boolean collection = isCollection(childResourceName);
 
-                            final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childName, SlashHandling.END_WITHOUT_SLASH);
+                            final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childResourceName, SlashHandling.END_WITHOUT_SLASH);
                             makeResourceSubRequest((collection ? collectionURI : removeParameters(collectionURI)), req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, collection);
                         }
                         @Override public void onEnd() {
