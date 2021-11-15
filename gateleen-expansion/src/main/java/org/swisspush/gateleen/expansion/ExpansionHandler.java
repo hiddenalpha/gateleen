@@ -708,7 +708,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                 if(isStorageExpand(targetUri)){
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
-                    new SlicedLoop<>(vertx, targetUri, subResourceNames.iterator(), new Destination<>() {
+                    new SlicedLoop<>(vertx, req.uri(), subResourceNames.iterator(), new Destination<>() {
                         @Override public void onNext(String childName) {
                             log.trace("processing child resource: {}", childName);
 
