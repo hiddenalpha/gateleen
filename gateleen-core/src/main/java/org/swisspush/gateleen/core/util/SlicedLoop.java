@@ -14,7 +14,7 @@ public class SlicedLoop<T> {
     private static final String DEBUG_HINT_DEFAULT = "Follow the stack to see who created the EventLoop-hog";
     private static final long yellingCoolDownMs = 60_000;
     private static final AtomicInteger numEnqueuedTasks = new AtomicInteger(0);
-    private static volatile long lastYellingEpochMs = 0;
+    private static long lastYellingEpochMs = 0;
     private final Vertx vertx;
     private final Iterator<T> source;
     private final Destination<T> dst;
@@ -65,7 +65,7 @@ public class SlicedLoop<T> {
      * Returns how many tasks currently are waiting to get some CPU time. Can be
      * an interesting value for metrics for example.
      */
-    public int getEnqueuedTasksCount() {
+    public static int getEnqueuedTasksCount() {
         return numEnqueuedTasks.get();
     }
 
@@ -78,9 +78,9 @@ public class SlicedLoop<T> {
             delayMs = Math.min(delayMs * taskNum, yellingThresholdNs/500);
         }
         if (taskNum >= 128) {
-            log.debug("Schedule {} async task with delay {}.", taskNum, delayMs);
+            log.debug("Schedule {}th async task with delay {}.", taskNum, delayMs);
         }else if (taskNum >= 32) {
-            log.trace("Schedule {} async task with delay {}.", taskNum, delayMs);
+            log.trace("Schedule {}th async task with delay {}.", taskNum, delayMs);
         }
         vertx.setTimer(delayMs, tmrId -> {
             numEnqueuedTasks.decrementAndGet();
@@ -130,6 +130,7 @@ public class SlicedLoop<T> {
                     continue; // Process next element right now.
                 }
             }
+            // End of iteration reached. No more elements to process. We're done.
             log.debug("Broke down iteration of {} elements into {} tasks.", numElems, numSlices);
             dst.onEnd();
             return;
