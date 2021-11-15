@@ -350,7 +350,6 @@ public class ExpansionHandler implements RuleChangesObserver{
                 log.trace(" x-delta for {} is {}", targetUri, cRes.headers().get("x-delta"));
             }
 
-            // WARN This callback is called SYNCHRONOUSLY
             cRes.bodyHandler(data -> {
 
                     /*
@@ -538,7 +537,6 @@ public class ExpansionHandler implements RuleChangesObserver{
 
         subRequestCounter.incrementAndGet();
 
-        //TimeTrace.Zone zone_httpClient_request = TimeTrace.zoneEnter("ExpansionHandler.makeResourceSubRequest  httpClient.request(HttpMethod.GET, targetUri, ...)");
         // request target uri
         final HttpClientRequest cReq = httpClient.request(HttpMethod.GET, targetUri, cRes -> {
 
@@ -586,7 +584,6 @@ public class ExpansionHandler implements RuleChangesObserver{
                 }
             });
         });
-        //zone_httpClient_request.zoneExit();
 
         if (log.isTraceEnabled()) {
             log.trace("set the cReq headers for the subRequest");
