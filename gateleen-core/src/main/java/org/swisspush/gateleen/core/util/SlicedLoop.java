@@ -13,7 +13,7 @@ import static java.lang.System.nanoTime;
 public class SlicedLoop<T> {
     private static final Logger log = LoggerFactory.getLogger(SlicedLoop.class);
     private static final String DEBUG_HINT_DEFAULT = "Follow the stack to see who created the EventLoop-hog";
-    private static final long yellingCoolDownMs = 60_000;
+    private static final long yellingCoolDownMs = 600_000;
     private static final AtomicInteger numEnqueuedTasks = new AtomicInteger(0);
     private static long lastYellingEpochMs = 0;
     private final Vertx vertx;
@@ -165,7 +165,7 @@ public class SlicedLoop<T> {
             if (usedCpuNs > Long.MAX_VALUE / 2) {
                 // nanoTime did overflow since we measured start point. Unlikely, but
                 // still can happen. See JavaDoc of nanoTime(). Applying yet another
-                // overflow on the difference by unsigned-max-value reverts the effect
+                // overflow on the difference by signed-max-value reverts the effect
                 // and we end up with our expected difference.
                 usedCpuNs += Long.MAX_VALUE;
             }
@@ -197,8 +197,8 @@ public class SlicedLoop<T> {
     }
 
     /**
-     * Does not get thrown. Only used to log stack-traces of code hogging up
-     * the event-loop for too much time.
+     * Does not get thrown. Only used to log stack-traces of code which hog
+     * the event-loop for too long.
      */
     public static class EventLoopHogException extends RuntimeException {
         private EventLoopHogException(String message) {
