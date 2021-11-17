@@ -173,8 +173,8 @@ public class SlicedLoop<T> {
      * Does not get thrown. Only used to log stack-traces of code which hog
      * the event-loop for too long.
      */
-    static class EventLoopHogException extends RuntimeException {
-        EventLoopHogException(String message) {
+    public static class EventLoopHogException extends RuntimeException {
+        private EventLoopHogException(String message) {
             super(message);
         }
     }
