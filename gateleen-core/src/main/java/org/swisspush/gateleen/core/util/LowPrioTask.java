@@ -5,17 +5,29 @@ import io.vertx.core.http.HttpClientRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
 import java.util.Iterator;
+import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.lang.System.nanoTime;
 
-public class SlicedLoop<T> {
-    private static final Logger log = LoggerFactory.getLogger(SlicedLoop.class);
+/**
+ * An asynchronous loop which splits the CPU usage to multiple reactor tasks
+ * based on a time limit.
+ *
+ * TODO
+ *
+ * @param <T>
+ *     Type of the elements to iterate.
+ */
+public class LowPrioTask<T> {
+    private static final Logger log = LoggerFactory.getLogger(LowPrioTask.class);
     private static final String DEBUG_HINT_DEFAULT = "Follow the stack to see who created the EventLoop-hog";
     private static final long yellingCoolDownMs = 600_000;
     private static final AtomicInteger numEnqueuedTasks = new AtomicInteger(0);
     private static long lastYellingEpochMs = 0;
+    private static final Queue<Runnable> prioBelowNormal = new ArrayDeque<>();
     private final Vertx vertx;
     private final Iterator<T> source;
     private final Destination<T> dst;
@@ -34,7 +46,7 @@ public class SlicedLoop<T> {
      * @param dst
      *      Performs the work to be done inside the loop.
      */
-    public SlicedLoop(Vertx vertx, Iterator<T> src, Destination<T> dst) {
+    public LowPrioTask(Vertx vertx, Iterator<T> src, Destination<T> dst) {
         this(vertx, DEBUG_HINT_DEFAULT, src, dst);
     }
 
@@ -47,7 +59,7 @@ public class SlicedLoop<T> {
      * @param dst
      *      Performs the work to be done inside the loop.
      */
-    public SlicedLoop(Vertx vertx, String debugHint, Iterator<T> src, Destination<T> dst) {
+    public LowPrioTask(Vertx vertx, String debugHint, Iterator<T> src, Destination<T> dst) {
         this(vertx, 4_000_000, debugHint, src, dst);
     }
 
@@ -62,7 +74,7 @@ public class SlicedLoop<T> {
      * @param dst
      *      Performs the work to be done inside the loop.
      */
-    public SlicedLoop(Vertx vertx, int sliceThresholdNs, String debugHint, Iterator<T> src, Destination<T> dst) {
+    public LowPrioTask(Vertx vertx, int sliceThresholdNs, String debugHint, Iterator<T> src, Destination<T> dst) {
         this(vertx, sliceThresholdNs, 16_000_000, 16_000_000, debugHint, src, dst);
     }
 
@@ -85,7 +97,7 @@ public class SlicedLoop<T> {
      * @param dst
      *      Performs the work to be done inside the loop.
      */
-    private SlicedLoop(Vertx vertx, int sliceThresholdNs, int postponeDelayNs, int yellingThresholdNs, String debugHint, Iterator<T> src, Destination<T> dst) {
+    private LowPrioTask(Vertx vertx, int sliceThresholdNs, int postponeDelayNs, int yellingThresholdNs, String debugHint, Iterator<T> src, Destination<T> dst) {
         this.vertx = vertx;
         this.source = src;
         this.dst = dst;
@@ -108,7 +120,9 @@ public class SlicedLoop<T> {
      * Resume (or start) the paused iteration. Think for {@link HttpClientRequest#resume()}.
      */
     public void resume() {
-        if (isRunning) throw new IllegalStateException("Already running");
+        if (isRunning){
+            throw new IllegalStateException("Already running");
+        }
         pauseRequest = false;
         isRunning = true;
         enqueueNextSlice();
@@ -119,25 +133,27 @@ public class SlicedLoop<T> {
      * an interesting value for metrics for example.
      */
     public static int getEnqueuedTasksCount() {
-        return numEnqueuedTasks.get();
+        return numEnqueuedTasks.get() + prioBelowNormal.size();
     }
 
     private void enqueueNextSlice() {
-        long delayMs = (postponeDelayNs + 500_000L) / 1_000_000;
-        if (delayMs < 1) delayMs = 1; // <- Smallest value vertx allows.
-        int taskNum = numEnqueuedTasks.incrementAndGet();
-        if (taskNum > 2) {
-            // Slow-down enqueuing (gradually but limited) under load.
-            delayMs = Math.min(delayMs * taskNum, yellingThresholdNs/500);
+        final int maxTasks = 2; // TODO move to field.
+        prioBelowNormal.add(this::iterateNextSlice);
+        if (numEnqueuedTasks.get() > maxTasks) {
+            log.trace("Don't flood reactors event queue. Task will be enqueued later.");
+            return;
         }
-        if (taskNum >= 128) {
-            log.debug("Schedule {}th async task with delay {}.", taskNum, delayMs);
-        }else if (taskNum >= 32) {
-            log.trace("Schedule {}th async task with delay {}.", taskNum, delayMs);
+        Runnable nextTask = prioBelowNormal.poll();
+        if (nextTask == null) { // Should not happen as we added an element above. But who knows.
+            log.trace("No more tasks to enqueue.");
+            return;
         }
-        vertx.setTimer(delayMs, tmrId -> {
+        log.trace("Enqueue another task from our low-prio line.");
+        numEnqueuedTasks.incrementAndGet();
+        vertx.setTimer(1, tmrId -> {
             numEnqueuedTasks.decrementAndGet();
-            iterateNextSlice();
+            enqueueNextSlice();
+            nextTask.run();
         });
     }
 
@@ -185,7 +201,6 @@ public class SlicedLoop<T> {
                     log.trace("Slice-quota of {} ns exceeded ({} turns consumed {} ns). Give up CPU and continue later.", sliceThresholdNs, iChild + 1, usedCpuNs);
                 }
                 // Slice-quota exceeded. Give up CPU and continue later.
-                enqueueNextSlice();
                 return;
             }
         }

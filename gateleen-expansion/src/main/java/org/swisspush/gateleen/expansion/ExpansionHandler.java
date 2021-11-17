@@ -17,7 +17,7 @@ import org.swisspush.gateleen.core.storage.ResourceStorage;
 import org.swisspush.gateleen.core.util.*;
 import org.swisspush.gateleen.core.util.ExpansionDeltaUtil.CollectionResourceContainer;
 import org.swisspush.gateleen.core.util.ExpansionDeltaUtil.SlashHandling;
-import org.swisspush.gateleen.core.util.SlicedLoop.Destination;
+import org.swisspush.gateleen.core.util.LowPrioTask.Destination;
 import org.swisspush.gateleen.routing.Rule;
 import org.swisspush.gateleen.routing.RuleFeaturesProvider;
 import org.swisspush.gateleen.routing.RuleProvider;
@@ -694,7 +694,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                 if(isStorageExpand(targetUri)){
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
-                    new SlicedLoop<>(vertx, req.uri(), subResourceNames.iterator(), new Destination<>() {
+                    new LowPrioTask<>(vertx, req.uri(), subResourceNames.iterator(), new Destination<>() {
                         @Override public void onNext(String childResourceName) {
                             log.trace("processing child resource: {}", childResourceName);
 
