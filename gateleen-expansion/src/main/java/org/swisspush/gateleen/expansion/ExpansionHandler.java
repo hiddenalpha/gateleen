@@ -22,7 +22,10 @@ import org.swisspush.gateleen.routing.Rule;
 import org.swisspush.gateleen.routing.RuleFeaturesProvider;
 import org.swisspush.gateleen.routing.RuleProvider;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.EXPAND_ON_BACKEND;
@@ -112,6 +115,14 @@ public class ExpansionHandler implements RuleChangesObserver{
     private List<String> parameter_to_remove_after_initial_request;
 
     private RuleFeaturesProvider ruleFeaturesProvider = new RuleFeaturesProvider(new ArrayList<>());
+
+    /**
+     * @deprecated For backward compatibility only. Use other constructor instead.
+     */
+    @Deprecated
+    public ExpansionHandler(Vertx vertx, final ResourceStorage storage, HttpClient httpClient, final Map<String, Object> properties, String serverRoot, final String rulesPath) {
+        this(vertx, storage, httpClient, new SlicedLoopFactory(vertx, new DeferredReactorEnqueue(vertx)), properties, serverRoot, rulesPath);
+    }
 
     /**
      * Creates a new instance of the ExpansionHandler.
