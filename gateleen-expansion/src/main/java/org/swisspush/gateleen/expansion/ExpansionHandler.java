@@ -17,7 +17,6 @@ import org.swisspush.gateleen.core.storage.ResourceStorage;
 import org.swisspush.gateleen.core.util.*;
 import org.swisspush.gateleen.core.util.ExpansionDeltaUtil.CollectionResourceContainer;
 import org.swisspush.gateleen.core.util.ExpansionDeltaUtil.SlashHandling;
-import org.swisspush.gateleen.core.util.SlicedLoop.Destination;
 import org.swisspush.gateleen.routing.Rule;
 import org.swisspush.gateleen.routing.RuleFeaturesProvider;
 import org.swisspush.gateleen.routing.RuleProvider;
@@ -95,8 +94,6 @@ public class ExpansionHandler implements RuleChangesObserver{
     private int maxExpansionLevelSoft = Integer.MAX_VALUE;
     private int maxExpansionLevelHard = Integer.MAX_VALUE;
 
-    private final Vertx vertx;
-    private final SlicedLoopFactory slicedLoopFactory;
     private HttpClient httpClient;
     private Map<String, Object> properties;
     private String serverRoot;
@@ -117,14 +114,6 @@ public class ExpansionHandler implements RuleChangesObserver{
     private RuleFeaturesProvider ruleFeaturesProvider = new RuleFeaturesProvider(new ArrayList<>());
 
     /**
-     * @deprecated For backward compatibility only. Use other constructor instead.
-     */
-    @Deprecated
-    public ExpansionHandler(Vertx vertx, final ResourceStorage storage, HttpClient httpClient, final Map<String, Object> properties, String serverRoot, final String rulesPath) {
-        this(vertx, storage, httpClient, new SlicedLoopFactory(vertx, new DeferredReactorEnqueue(vertx)), properties, serverRoot, rulesPath);
-    }
-
-    /**
      * Creates a new instance of the ExpansionHandler.
      *
      * @param vertx vertx
@@ -134,9 +123,7 @@ public class ExpansionHandler implements RuleChangesObserver{
      * @param serverRoot serverRoot
      * @param rulesPath rulesPath
      */
-    public ExpansionHandler(Vertx vertx, final ResourceStorage storage, HttpClient httpClient, SlicedLoopFactory slicedLoopFactory, final Map<String, Object> properties, String serverRoot, final String rulesPath) {
-        this.vertx = vertx;
-        this.slicedLoopFactory = slicedLoopFactory;
+    public ExpansionHandler(Vertx vertx, final ResourceStorage storage, HttpClient httpClient, final Map<String, Object> properties, String serverRoot, final String rulesPath) {
         this.httpClient = httpClient;
         this.properties = properties;
         this.serverRoot = serverRoot;
@@ -704,23 +691,17 @@ public class ExpansionHandler implements RuleChangesObserver{
                 if(isStorageExpand(targetUri)){
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
-                    slicedLoopFactory.slicedLoop(req.uri(), subResourceNames.iterator(), new Destination<>() {
-                        @Override public void onNext(String childResourceName) {
+                    for (String childResourceName : subResourceNames) {
+                        if (log.isTraceEnabled()) {
                             log.trace("processing child resource: {}", childResourceName);
+                        }
 
-                            // if the child is not a collection, we remove the parameter
-                            boolean collection = isCollection(childResourceName);
+                        // if the child is not a collection, we remove the parameter
+                        boolean collection = isCollection(childResourceName);
 
-                            final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childResourceName, SlashHandling.END_WITHOUT_SLASH);
-                            makeResourceSubRequest((collection ? collectionURI : removeParameters(collectionURI)), req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, collection);
-                        }
-                        @Override public void onEnd() {
-                            log.debug("onEnd()");
-                        }
-                        @Override public void onError(RuntimeException e) {
-                            log.error("Failed to serve expansion request: {}", req.uri(), e);
-                        }
-                    }).resume();
+                        final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childResourceName, SlashHandling.END_WITHOUT_SLASH);
+                        makeResourceSubRequest((collection ? collectionURI : removeParameters(collectionURI)), req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, collection);
+                    }
                 }
             }
             // max. level reached
