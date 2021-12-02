@@ -1,5 +1,7 @@
 package org.swisspush.gateleen.expansion;
 
+import io.reactivex.BackpressureStrategy;
+import io.reactivex.Flowable;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
@@ -10,6 +12,7 @@ import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
@@ -26,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.EXPAND_ON_BACKEND;
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.STORAGE_EXPAND;
@@ -368,7 +372,16 @@ public class ExpansionHandler implements RuleChangesObserver{
                      */
                 makeResourceSubRequest(targetUri, req, finalExpandLevel, new AtomicInteger(),
                         recursiveHandlerType,
-                        RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), true);
+                        RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), sub -> {
+                            try {
+                                handleCollectionResource(sub.targetUri, sub.req, sub.recursionLevel, sub.subRequestCounter, sub.recursionHandlerType, sub.handler, sub.data, sub.eTag);
+                            } catch (ResourceCollectionException e) {
+                                if (log.isTraceEnabled()) {
+                                    log.trace("handling collection failed with: {}", e.getMessage());
+                                }
+                                handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
+                            }
+                        }, true);
             });
             cRes.exceptionHandler(ExpansionDeltaUtil.createResponseExceptionHandler(req, targetUri, ExpansionHandler.class));
         });
@@ -507,8 +520,7 @@ public class ExpansionHandler implements RuleChangesObserver{
 
     /**
      * Performs a recursive, asynchronous GET operation on the given uri.
-     *
-     * @param targetUri - uri for creating a new request
+     *  @param targetUri - uri for creating a new request
      * @param req - the original request
      * @param recursionLevel - the actual depth of the recursion
      * @param subRequestCounter - the request counter
@@ -516,7 +528,7 @@ public class ExpansionHandler implements RuleChangesObserver{
      * @param handler - the parent handler
      * @param collection - indicates if the just passed targetUri belongs to a collection or a resource
      */
-    private void makeResourceSubRequest(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, final boolean collection) {
+    private void makeResourceSubRequest(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, Consumer<SuperFancyArguments> onChildCollection, final boolean collection) {
 
         Logger log = RequestLoggerFactory.getLogger(ExpansionHandler.class, req);
 
@@ -567,14 +579,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                      * which is capable of even handling exceptions.
                      */
                     if (collection) {
-                        try {
-                            handleCollectionResource(removeParameters(targetUri), req, recursionLevel, subRequestCounter, recursionHandlerType, handler, data, eTag);
-                        } catch (ResourceCollectionException e) {
-                            if (log.isTraceEnabled()) {
-                                log.trace("handling collection failed with: {}", e.getMessage());
-                            }
-                            handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
-                        }
+                        onChildCollection.accept(removeParameters(targetUri), req, recursionLevel, subRequestCounter, recursionHandlerType, handler, data, eTag);
                     } else {
                         handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
                     }
@@ -691,17 +696,35 @@ public class ExpansionHandler implements RuleChangesObserver{
                 if(isStorageExpand(targetUri)){
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
-                    for (String childResourceName : subResourceNames) {
-                        if (log.isTraceEnabled()) {
-                            log.trace("processing child resource: {}", childResourceName);
-                        }
 
-                        // if the child is not a collection, we remove the parameter
-                        boolean collection = isCollection(childResourceName);
+                    Flowable.fromIterable(subResourceNames)
+                            .concatMapEager(childResourceName -> wrap((Consumer<SuperFancyArguments> enqueueChild) -> {
+                                if (log.isTraceEnabled()) {
+                                    log.trace("processing child resource: {}", childResourceName);
+                                }
 
-                        final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childResourceName, SlashHandling.END_WITHOUT_SLASH);
-                        makeResourceSubRequest((collection ? collectionURI : removeParameters(collectionURI)), req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, collection);
-                    }
+                                // if the child is not a collection, we remove the parameter
+                                boolean collection = isCollection(childResourceName);
+
+                                final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childResourceName, SlashHandling.END_WITHOUT_SLASH);
+                                makeResourceSubRequest((collection ? collectionURI : removeParameters(collectionURI)), req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, enqueueChild, collection);
+                            }), 2, 2)
+                            .doOnNext(sub -> {
+                                try {
+                                    // Go recursive with that child
+                                    // WARN: Make sure we don't leak wrong arguments from parent
+                                    //       scope and only use the ones passed via 'sub'
+                                    handleCollectionResource(sub.targetUri, sub.req, sub.recursionLevel, sub.subRequestCounter, sub.recursionHandlerType, sub.handler, sub.data, sub.eTag);
+                                } catch (ResourceCollectionException e) {
+                                    if (log.isTraceEnabled()) {
+                                        log.trace("handling collection failed with: {}", e.getMessage());
+                                    }
+                                    handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
+                                }
+                            })
+                            .subscribe()
+                    ;
+
                 }
             }
             // max. level reached
@@ -719,6 +742,46 @@ public class ExpansionHandler implements RuleChangesObserver{
                 handler.handle(new ResourceNode(collectionResourceContainer.getCollectionName(), jsonArray, eTag));
             }
         }
+    }
+
+//    public static interface SuperFancyConsumer {
+//        void accept(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, final Buffer data, final String eTag);
+//    }
+
+    private static class SuperFancyArguments {
+        final String targetUri;
+        final HttpServerRequest req;
+        final int recursionLevel;
+        final AtomicInteger subRequestCounter;
+        final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType;
+        final DeltaHandler<ResourceNode> handler;
+        final Buffer data;
+        final String eTag;
+
+        public SuperFancyArguments(String targetUri, HttpServerRequest req, int recursionLevel, AtomicInteger subRequestCounter, RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, DeltaHandler<ResourceNode> handler, Buffer data, String eTag) {
+            this.targetUri = targetUri;
+            this.req = req;
+            this.recursionLevel = recursionLevel;
+            this.subRequestCounter = subRequestCounter;
+            this.recursionHandlerType = recursionHandlerType;
+            this.handler = handler;
+            this.data = data;
+            this.eTag = eTag;
+        }
+    }
+
+    /**
+     * Adapts a call using a callback as a reactive publisher.
+     *
+     * Copy-Pasted from https://gitit.post.ch/users/bovetl/repos/rxjava-sample/browse/src/main/java/ch/post/example/Loop.java?at=6ca52bd9c227c17c8a8229c88df32eab6772bf33#34-44
+     */
+    private static <R> Publisher<R> wrap(Consumer<Consumer<R>> call) {
+        return  Flowable.create(emitter -> {
+            call.accept( r -> {
+                emitter.onNext(r);
+                emitter.onComplete();
+            });
+        }, BackpressureStrategy.BUFFER);
     }
 
     /**
