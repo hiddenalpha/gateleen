@@ -98,6 +98,7 @@ public class ExpansionHandler implements RuleChangesObserver{
     private int maxExpansionLevelSoft = Integer.MAX_VALUE;
     private int maxExpansionLevelHard = Integer.MAX_VALUE;
 
+    private Vertx vertx;
     private HttpClient httpClient;
     private Map<String, Object> properties;
     private String serverRoot;
@@ -128,6 +129,7 @@ public class ExpansionHandler implements RuleChangesObserver{
      * @param rulesPath rulesPath
      */
     public ExpansionHandler(Vertx vertx, final ResourceStorage storage, HttpClient httpClient, final Map<String, Object> properties, String serverRoot, final String rulesPath) {
+        this.vertx = vertx;
         this.httpClient = httpClient;
         this.properties = properties;
         this.serverRoot = serverRoot;
@@ -743,17 +745,9 @@ public class ExpansionHandler implements RuleChangesObserver{
 
     /**
      * Illustrates an asynchronous call that eventually calls the callback.
-     * @author lbovet
      */
-    private static void resolve(String s, java.util.function.Consumer<String> callback) {
-        new Thread(() -> {
-            try {
-                Thread.sleep((long) (Math.random() * 500) + 500);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-            callback.accept(s.toUpperCase(java.util.Locale.ROOT));
-        }).start();
+    private void resolve(String s, java.util.function.Consumer<String> callback) {
+        vertx.setTimer(16, ev -> callback.accept(s));
     }
 
     /**
