@@ -701,9 +701,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                             .concatMapEager(s -> wrap((Consumer<String> callback) -> vertx.setTimer(16, e -> callback.accept(s))),
                                     2, 2) // only 2 resolutions can be inflight anytime
                             .doOnNext(childResourceName -> { // once resolved, items are ordered and processed
-                                if (log.isTraceEnabled()) {
-                                    log.trace("processing child resource: {}", childResourceName);
-                                }
+                                log.trace("processing child resource: {}", childResourceName);
                                 boolean collection = isCollection(childResourceName);
                                 String childUri = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childResourceName, SlashHandling.END_WITHOUT_SLASH);
                                 // if the child is not a collection, we remove the parameter
