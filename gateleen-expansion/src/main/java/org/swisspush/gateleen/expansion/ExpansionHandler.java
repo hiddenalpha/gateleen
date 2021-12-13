@@ -697,7 +697,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
                     Flowable.fromIterable(subResourceNames)
-                            .concatMapEager(s -> wrap((Consumer<String> callback) -> vertx.setTimer(1, e -> callback.accept(s))),
+                            .concatMapEager(s -> wrap((Consumer<String> callback) -> vertx.setTimer(16, e -> callback.accept(s))),
                                     2, 2) // only 2 resolutions can be inflight anytime
                             .doOnNext(childResourceName -> { // once resolved, items are ordered and processed
                                 if (log.isTraceEnabled()) {
