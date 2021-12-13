@@ -697,7 +697,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
                     Flowable.fromIterable(subResourceNames)
-                            .concatMapEager(item -> wrap((Consumer<String> callback) -> resolve(item, callback)),
+                            .concatMapEager(s -> wrap((Consumer<String> callback) -> vertx.setTimer(1, e -> callback.accept(s))),
                                     2, 2) // only 2 resolutions can be inflight anytime
                             .doOnNext(childResourceName -> { // once resolved, items are ordered and processed
                                 if (log.isTraceEnabled()) {
@@ -741,13 +741,6 @@ public class ExpansionHandler implements RuleChangesObserver{
                 emitter.onComplete();
             });
         }, BackpressureStrategy.BUFFER);
-    }
-
-    /**
-     * Illustrates an asynchronous call that eventually calls the callback.
-     */
-    private void resolve(String s, java.util.function.Consumer<String> callback) {
-        vertx.setTimer(16, ev -> callback.accept(s));
     }
 
     /**
