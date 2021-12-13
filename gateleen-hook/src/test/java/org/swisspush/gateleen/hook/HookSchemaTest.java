@@ -8,7 +8,6 @@ import com.networknt.schema.ValidationMessage;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-import org.swisspush.gateleen.core.util.ResourcesUtils;
 
 import java.io.IOException;
 import java.net.URL;
@@ -21,8 +20,8 @@ public class HookSchemaTest {
 
     @Before
     public void before() {
-        String hookSchema = ResourcesUtils.loadResource("gateleen_hooking_schema_hook", true);
-        schema = JsonSchemaFactory.getInstance().getSchema(hookSchema);
+        URL url = HookSchemaTest.class.getResource("/gateleen_hooking_schema_hook");
+        schema = JsonSchemaFactory.getInstance().getSchema(url);
     }
 
     @Test

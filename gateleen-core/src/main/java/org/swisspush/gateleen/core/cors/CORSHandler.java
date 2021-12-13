@@ -14,7 +14,7 @@ import org.swisspush.gateleen.core.util.StatusCode;
  */
 public class CORSHandler {
 
-    private boolean addCORSheaders;
+    private boolean addCORSheaders = false;
 
     public boolean isOptionsRequest(HttpServerRequest request) {
         return HttpMethod.OPTIONS == request.method();

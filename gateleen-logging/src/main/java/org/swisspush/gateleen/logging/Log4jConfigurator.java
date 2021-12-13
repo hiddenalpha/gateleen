@@ -90,7 +90,7 @@ public class Log4jConfigurator {
         List<String> loggers = getLoggers();
         @SuppressWarnings("rawtypes")
         Comparator comp = new LoggerComparator();
-        loggers.sort(comp);
+        Collections.sort(loggers, comp);
         return loggers;
     }
 

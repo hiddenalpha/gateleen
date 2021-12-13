@@ -3,6 +3,7 @@ package org.swisspush.gateleen.core.util;
 import io.vertx.core.MultiMap;
 import io.vertx.core.http.HttpServerRequest;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Matcher;

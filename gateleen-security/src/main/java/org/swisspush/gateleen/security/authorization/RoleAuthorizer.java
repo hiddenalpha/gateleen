@@ -234,9 +234,17 @@ public class RoleAuthorizer implements ConfigurationResource {
         Map<PatternHolder, Set<String>> permissions = aclFactory.parseAcl(buffer);
         for (Entry<PatternHolder, Set<String>> entry : permissions.entrySet()) {
             PatternHolder holder = entry.getKey();
-            Map<String, Set<String>> aclItem = grantedRoles.computeIfAbsent(holder, k -> new HashMap<>());
+            Map<String, Set<String>> aclItem = grantedRoles.get(holder);
+            if (aclItem == null) {
+                aclItem = new HashMap<>();
+                grantedRoles.put(holder, aclItem);
+            }
             for (String method : entry.getValue()) {
-                Set<String> aclMethod = aclItem.computeIfAbsent(method, k -> new HashSet<>());
+                Set<String> aclMethod = aclItem.get(method);
+                if (aclMethod == null) {
+                    aclMethod = new HashSet<>();
+                    aclItem.put(method, aclMethod);
+                }
                 aclMethod.add(role);
             }
         }

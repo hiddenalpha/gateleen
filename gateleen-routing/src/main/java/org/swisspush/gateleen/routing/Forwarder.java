@@ -280,7 +280,7 @@ public class Forwarder implements Handler<RoutingContext> {
             // But still it's allowed - so they 'could' have one. So using http-method to decide "chunked or not" is also not a sustainable solution.
             //
             // --> we need to wrap the client-Request to catch up the first (body)-buffer and "setChucked(true)" in advance and just-in-time.
-            WriteStream<Buffer> cReqWrapped = new WriteStream<>() {
+            WriteStream<Buffer> cReqWrapped = new WriteStream<Buffer>() {
                 private boolean firstBuffer = true;
 
                 @Override
