@@ -98,7 +98,7 @@ public class ExpansionHandler implements RuleChangesObserver{
     private int maxExpansionLevelSoft = Integer.MAX_VALUE;
     private int maxExpansionLevelHard = Integer.MAX_VALUE;
 
-    private Vertx vertx;
+    private final Vertx vertx;
     private HttpClient httpClient;
     private Map<String, Object> properties;
     private String serverRoot;
