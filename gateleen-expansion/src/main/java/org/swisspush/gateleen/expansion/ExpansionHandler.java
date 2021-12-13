@@ -374,7 +374,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                      */
                 makeResourceSubRequest(targetUri, req, finalExpandLevel, new AtomicInteger(),
                         recursiveHandlerType,
-                        RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), this::handleCollectionResource, true);
+                        RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), true);
             });
             cRes.exceptionHandler(ExpansionDeltaUtil.createResponseExceptionHandler(req, targetUri, ExpansionHandler.class));
         });
@@ -513,7 +513,8 @@ public class ExpansionHandler implements RuleChangesObserver{
 
     /**
      * Performs a recursive, asynchronous GET operation on the given uri.
-     *  @param targetUri - uri for creating a new request
+     *
+     * @param targetUri - uri for creating a new request
      * @param req - the original request
      * @param recursionLevel - the actual depth of the recursion
      * @param subRequestCounter - the request counter
@@ -521,7 +522,7 @@ public class ExpansionHandler implements RuleChangesObserver{
      * @param handler - the parent handler
      * @param collection - indicates if the just passed targetUri belongs to a collection or a resource
      */
-    private void makeResourceSubRequest(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, CollectionResourceHandler onChild, final boolean collection) {
+    private void makeResourceSubRequest(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, final boolean collection) {
 
         Logger log = RequestLoggerFactory.getLogger(ExpansionHandler.class, req);
 
@@ -573,7 +574,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                      */
                     if (collection) {
                         try {
-                            onChild.handleCollectionResource(removeParameters(targetUri), req, recursionLevel, subRequestCounter, recursionHandlerType, handler, data, eTag);
+                            handleCollectionResource(removeParameters(targetUri), req, recursionLevel, subRequestCounter, recursionHandlerType, handler, data, eTag);
                         } catch (ResourceCollectionException e) {
                             if (log.isTraceEnabled()) {
                                 log.trace("handling collection failed with: {}", e.getMessage());
@@ -708,7 +709,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                                 // if the child is not a collection, we remove the parameter
                                 childUri = collection ? childUri : removeParameters(childUri);
 
-                                makeResourceSubRequest(childUri, req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, this::handleCollectionResource, collection);
+                                makeResourceSubRequest(childUri, req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, collection);
                             })
                             .subscribe();
                 }
@@ -765,13 +766,4 @@ public class ExpansionHandler implements RuleChangesObserver{
     private String geteTag(MultiMap headers) {
         return headers != null && headers.contains(ETAG_HEADER) ? headers.get(ETAG_HEADER) : "";
     }
-
-    /**
-     * Type of the callback we use above. Cannot use {@link java.util.function}
-     * due to too many parameters and custom exceptions.
-     */
-    private static interface CollectionResourceHandler {
-        void handleCollectionResource(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, final Buffer data, final String eTag) throws ResourceCollectionException;
-    }
-
 }
