@@ -716,7 +716,6 @@ public class ExpansionHandler implements RuleChangesObserver{
                                     }
                                 };
 
-                                log.error("Call makeResourceSubRequest(...)");
                                 makeResourceSubRequest(childUri, req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, publishChildToNextStep, collection);
                             }), 2, 2) // only 2 resolutions can be inflight anytime
                             .doOnNext(ChildWithArgs::handleCollectionResource)
