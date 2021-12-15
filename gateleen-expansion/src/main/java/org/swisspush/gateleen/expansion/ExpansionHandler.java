@@ -713,7 +713,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                                         // There's nothing we would need to handle. But need to publish
                                         // a value to decrease count of pending requests as it would lock
                                         // if we don't do so.
-                                        callback.accept(null);
+                                        callback.accept(NOOP);
                                     }
                                 };
 
@@ -721,8 +721,8 @@ public class ExpansionHandler implements RuleChangesObserver{
                                 makeResourceSubRequest(childUri, req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, publishChildToNextStep, collection);
                             }), 2, 2) // only 2 resolutions can be inflight anytime
                             .doOnNext(childWithArgs -> {
-                                if (childWithArgs == null){
-                                    return; // See comment in previous lambda why we pass 'null' sometimes.
+                                if (NOOP == childWithArgs) {
+                                    return; // See comment in previous lambda about the why.
                                 }
                                 log.error("doOnNext({})", childWithArgs.targetUri);
                                 childWithArgs.handleCollectionResource();
@@ -800,7 +800,10 @@ public class ExpansionHandler implements RuleChangesObserver{
         @Override public void isNotACollection() {/*noop*/}
     }
 
-    private class ChildWithArgs {
+    static final ChildWithArgs NOOP = new ChildWithArgs(null, null, null, -1, null, null, null, null, null);
+
+    private static class ChildWithArgs {
+        final ExpansionHandler expansionHandler;
         final String targetUri;
         final HttpServerRequest req;
         final int recursionLevel;
@@ -810,7 +813,8 @@ public class ExpansionHandler implements RuleChangesObserver{
         final Buffer data;
         final String eTag;
 
-        private ChildWithArgs(String targetUri, HttpServerRequest req, int recursionLevel, AtomicInteger subRequestCounter, RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, DeltaHandler<ResourceNode> handler, Buffer data, String eTag) {
+        private ChildWithArgs(ExpansionHandler expansionHandler, String targetUri, HttpServerRequest req, int recursionLevel, AtomicInteger subRequestCounter, RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, DeltaHandler<ResourceNode> handler, Buffer data, String eTag) {
+            this.expansionHandler = expansionHandler;
             this.targetUri = targetUri;
             this.req = req;
             this.recursionLevel = recursionLevel;
@@ -822,7 +826,7 @@ public class ExpansionHandler implements RuleChangesObserver{
         }
 
         void handleCollectionResource() throws ResourceCollectionException {
-            ExpansionHandler.this.handleCollectionResource(
+            expansionHandler.handleCollectionResource(
                     targetUri, req, recursionLevel, subRequestCounter,
                     recursionHandlerType, handler, data, eTag);
         }
