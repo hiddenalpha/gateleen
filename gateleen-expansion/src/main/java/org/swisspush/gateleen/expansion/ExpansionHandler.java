@@ -98,7 +98,6 @@ public class ExpansionHandler implements RuleChangesObserver{
     private int maxExpansionLevelSoft = Integer.MAX_VALUE;
     private int maxExpansionLevelHard = Integer.MAX_VALUE;
 
-    private final Vertx vertx;
     private HttpClient httpClient;
     private Map<String, Object> properties;
     private String serverRoot;
@@ -129,7 +128,6 @@ public class ExpansionHandler implements RuleChangesObserver{
      * @param rulesPath rulesPath
      */
     public ExpansionHandler(Vertx vertx, final ResourceStorage storage, HttpClient httpClient, final Map<String, Object> properties, String serverRoot, final String rulesPath) {
-        this.vertx = vertx;
         this.httpClient = httpClient;
         this.properties = properties;
         this.serverRoot = serverRoot;
@@ -579,12 +577,12 @@ public class ExpansionHandler implements RuleChangesObserver{
                             if (log.isTraceEnabled()) {
                                 log.trace("handling collection failed with: {}", e.getMessage());
                             }
+                            onChild.isNotACollection();
                             handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
                         }
-                        onChild.isNotACollection();
                     } else {
-                        handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
                         onChild.isNotACollection();
+                        handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
                     }
                 }
             });
