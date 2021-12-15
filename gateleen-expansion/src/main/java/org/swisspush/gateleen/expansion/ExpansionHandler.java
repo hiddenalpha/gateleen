@@ -372,7 +372,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                      */
                 makeResourceSubRequest(targetUri, req, finalExpandLevel, new AtomicInteger(),
                         recursiveHandlerType,
-                        RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), new GoRecursiveAndNoopOnEnd(), true);
+                        RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), new RecurseCollectionButNoopForOthers(), true);
             });
             cRes.exceptionHandler(ExpansionDeltaUtil.createResponseExceptionHandler(req, targetUri, ExpansionHandler.class));
         });
@@ -577,12 +577,12 @@ public class ExpansionHandler implements RuleChangesObserver{
                             if (log.isTraceEnabled()) {
                                 log.trace("handling collection failed with: {}", e.getMessage());
                             }
-                            onChild.isNotACollection();
                             handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
+                            onChild.leaveResourceGotHandled();
                         }
                     } else {
-                        onChild.isNotACollection();
                         handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
+                        onChild.leaveResourceGotHandled();
                     }
                 }
             });
@@ -707,16 +707,17 @@ public class ExpansionHandler implements RuleChangesObserver{
                                 // if the child is not a collection, we remove the parameter
                                 childUri = collection ? childUri : removeParameters(childUri);
 
-                                CollectionResourceHandler publishChildToNextStep = new GoRecursiveAndNoopOnEnd() {
-                                    @Override public void isNotACollection() {
-                                        // There's nothing we would need to handle. But need to publish
-                                        // a value to decrease count of pending requests as it would lock
-                                        // if we don't do so.
+                                CollectionResourceHandler publishChildToNextStep = new RecurseCollectionButNoopForOthers() {
+                                    @Override public void onAnyKindOfResourceJustHappened() {
+                                        // There's nothing we would need to handle. But we need to publish
+                                        // a value to Flowable to decrease count of pending requests so
+                                        // Flowable knows that it can start processing another item.
                                         callback.accept(ChildWithArgs.NOOP);
                                     }
                                 };
-                                makeResourceSubRequest(childUri, req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, publishChildToNextStep, collection);
 
+                                log.error("Call makeResourceSubRequest(...)");
+                                makeResourceSubRequest(childUri, req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, publishChildToNextStep, collection);
                             }), 2, 2) // only 2 resolutions can be inflight anytime
                             .doOnNext(ChildWithArgs::handleCollectionResource)
                             .subscribe();
@@ -781,15 +782,17 @@ public class ExpansionHandler implements RuleChangesObserver{
      */
     private static interface CollectionResourceHandler {
         void handleCollectionResource(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, final Buffer data, final String eTag) throws ResourceCollectionException;
-        void isNotACollection();
+        void leaveResourceGotHandled();
+        void onAnyKindOfResourceJustHappened();
     }
 
-    private class GoRecursiveAndNoopOnEnd implements CollectionResourceHandler {
+    private class RecurseCollectionButNoopForOthers implements CollectionResourceHandler {
         @Override public void handleCollectionResource(String a, HttpServerRequest b, int c, AtomicInteger d, RecursiveHandlerFactory.RecursiveHandlerTypes e, DeltaHandler<ResourceNode> f, Buffer g, String h) throws ResourceCollectionException {
             ExpansionHandler.this.handleCollectionResource(a, b, c, d, e, f, g, h);
+            onAnyKindOfResourceJustHappened();
         }
-
-        @Override public void isNotACollection() {/*noop*/}
+        @Override public void leaveResourceGotHandled() { onAnyKindOfResourceJustHappened(); }
+        @Override public void onAnyKindOfResourceJustHappened() {/*noop*/}
     }
 
     /**
@@ -802,7 +805,6 @@ public class ExpansionHandler implements RuleChangesObserver{
             @Override
             void handleCollectionResource() throws ResourceCollectionException {/*noop*/}
         };
-
         final ExpansionHandler expansionHandler;
         final String targetUri;
         final HttpServerRequest req;
