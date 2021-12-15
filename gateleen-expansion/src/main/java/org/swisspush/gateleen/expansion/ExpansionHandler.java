@@ -699,8 +699,9 @@ public class ExpansionHandler implements RuleChangesObserver{
                 if(isStorageExpand(targetUri)){
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
-                    // once resolved, items are ordered and processed
+                    // Copy-Paste-Adapt from provided example code.
                     Flowable.fromIterable(subResourceNames)
+                            // once resolved, items are ordered and processed
                             .concatMapEager(childResourceName -> wrap((Consumer<ChildWithArgs> callback) -> {
                                 log.trace("processing child resource: {}", childResourceName);
                                 boolean collection = isCollection(childResourceName);
@@ -713,20 +714,13 @@ public class ExpansionHandler implements RuleChangesObserver{
                                         // There's nothing we would need to handle. But need to publish
                                         // a value to decrease count of pending requests as it would lock
                                         // if we don't do so.
-                                        callback.accept(NOOP);
+                                        callback.accept(ChildWithArgs.NOOP);
                                     }
                                 };
-
-                                log.error("Call makeResourceSubRequest(...)");
                                 makeResourceSubRequest(childUri, req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, publishChildToNextStep, collection);
+
                             }), 2, 2) // only 2 resolutions can be inflight anytime
-                            .doOnNext(childWithArgs -> {
-                                if (NOOP == childWithArgs) {
-                                    return; // See comment in previous lambda about the why.
-                                }
-                                log.error("doOnNext({})", childWithArgs.targetUri);
-                                childWithArgs.handleCollectionResource();
-                            })
+                            .doOnNext(ChildWithArgs::handleCollectionResource)
                             .subscribe();
                 }
             }
@@ -800,9 +794,17 @@ public class ExpansionHandler implements RuleChangesObserver{
         @Override public void isNotACollection() {/*noop*/}
     }
 
-    static final ChildWithArgs NOOP = new ChildWithArgs(null, null, null, -1, null, null, null, null, null);
-
+    /**
+     * Workaround to bundle needed args into ONE object for passing through
+     * flowable API. As we cannot pass dozens of references via flowable directly.
+     */
     private static class ChildWithArgs {
+        /** Special marker so we can call our callback without doing anything. */
+        static final ChildWithArgs NOOP = new ChildWithArgs(null, null, null, -1, null, null, null, null, null) {
+            @Override
+            void handleCollectionResource() throws ResourceCollectionException {/*noop*/}
+        };
+
         final ExpansionHandler expansionHandler;
         final String targetUri;
         final HttpServerRequest req;
