@@ -2,6 +2,7 @@ package org.swisspush.gateleen.core.util;
 
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpServerRequest;
+import io.vertx.core.http.HttpServerResponse;
 
 import static org.swisspush.gateleen.core.util.HttpRequestHeader.CONTENT_LENGTH;
 
@@ -55,10 +56,14 @@ public class HttpServerRequestUtil {
      * @param response the response containing needed values
      */
     public static void prepareResponse(HttpServerRequest request, HttpClientResponse response) {
-        request.response().setStatusCode(response.statusCode());
-        request.response().setStatusMessage(response.statusMessage());
-        response.headers().forEach(e -> request.response().headers().set(e.getKey(), e.getValue()));
-        request.response().headers().remove(CONTENT_LENGTH.getName());
-        request.response().setChunked(true);
+        prepareResponse(request.response(), response);
+    }
+
+    public static void prepareResponse(HttpServerResponse downstreamRsp, HttpClientResponse upstreamRsp) {
+        downstreamRsp.setStatusCode(upstreamRsp.statusCode());
+        downstreamRsp.setStatusMessage(upstreamRsp.statusMessage());
+        upstreamRsp.headers().forEach(e -> downstreamRsp.headers().set(e.getKey(), e.getValue()));
+        downstreamRsp.headers().remove(CONTENT_LENGTH.getName());
+        downstreamRsp.setChunked(true);
     }
 }

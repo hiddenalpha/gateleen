@@ -1,7 +1,5 @@
 package org.swisspush.gateleen.expansion;
 
-import io.reactivex.BackpressureStrategy;
-import io.reactivex.Flowable;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
@@ -12,7 +10,6 @@ import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
@@ -29,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.EXPAND_ON_BACKEND;
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.STORAGE_EXPAND;
@@ -372,7 +368,7 @@ public class ExpansionHandler implements RuleChangesObserver{
                      */
                 makeResourceSubRequest(targetUri, req, finalExpandLevel, new AtomicInteger(),
                         recursiveHandlerType,
-                        RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), new RecurseCollectionButNoopForOthers(), true);
+                        RecursiveHandlerFactory.createRootHandler(recursiveHandlerType, req, serverRoot, data, finalOriginalParams), true);
             });
             cRes.exceptionHandler(ExpansionDeltaUtil.createResponseExceptionHandler(req, targetUri, ExpansionHandler.class));
         });
@@ -520,7 +516,7 @@ public class ExpansionHandler implements RuleChangesObserver{
      * @param handler - the parent handler
      * @param collection - indicates if the just passed targetUri belongs to a collection or a resource
      */
-    private void makeResourceSubRequest(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, CollectionResourceHandler onChild, final boolean collection) {
+    private void makeResourceSubRequest(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, final boolean collection) {
 
         Logger log = RequestLoggerFactory.getLogger(ExpansionHandler.class, req);
 
@@ -572,17 +568,15 @@ public class ExpansionHandler implements RuleChangesObserver{
                      */
                     if (collection) {
                         try {
-                            onChild.handleCollectionResource(removeParameters(targetUri), req, recursionLevel, subRequestCounter, recursionHandlerType, handler, data, eTag);
+                            handleCollectionResource(removeParameters(targetUri), req, recursionLevel, subRequestCounter, recursionHandlerType, handler, data, eTag);
                         } catch (ResourceCollectionException e) {
                             if (log.isTraceEnabled()) {
                                 log.trace("handling collection failed with: {}", e.getMessage());
                             }
                             handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
-                            onChild.leaveResourceGotHandled();
                         }
                     } else {
                         handleSimpleResource(removeParameters(targetUri), handler, data, eTag);
-                        onChild.leaveResourceGotHandled();
                     }
                 }
             });
@@ -697,29 +691,17 @@ public class ExpansionHandler implements RuleChangesObserver{
                 if(isStorageExpand(targetUri)){
                     makeStorageExpandRequest(targetUri, subResourceNames, req, handler);
                 } else {
-                    // Copy-Paste-Adapt from provided example code.
-                    Flowable.fromIterable(subResourceNames)
-                            // once resolved, items are ordered and processed
-                            .concatMapEager(childResourceName -> wrap((Consumer<ChildWithArgs> callback) -> {
-                                log.trace("processing child resource: {}", childResourceName);
-                                boolean collection = isCollection(childResourceName);
-                                String childUri = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childResourceName, SlashHandling.END_WITHOUT_SLASH);
-                                // if the child is not a collection, we remove the parameter
-                                childUri = collection ? childUri : removeParameters(childUri);
+                    for (String childResourceName : subResourceNames) {
+                        if (log.isTraceEnabled()) {
+                            log.trace("processing child resource: {}", childResourceName);
+                        }
 
-                                CollectionResourceHandler publishChildToNextStep = new RecurseCollectionButNoopForOthers() {
-                                    @Override public void onAnyKindOfResourceJustHappened() {
-                                        // There's nothing we would need to handle. But we need to publish
-                                        // a value to Flowable to decrease count of pending requests so
-                                        // Flowable knows that it can start processing another item.
-                                        callback.accept(ChildWithArgs.NOOP);
-                                    }
-                                };
+                        // if the child is not a collection, we remove the parameter
+                        boolean collection = isCollection(childResourceName);
 
-                                makeResourceSubRequest(childUri, req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, publishChildToNextStep, collection);
-                            }), 2, 2) // only 2 resolutions can be inflight anytime
-                            .doOnNext(ChildWithArgs::handleCollectionResource)
-                            .subscribe();
+                        final String collectionURI = ExpansionDeltaUtil.constructRequestUri(targetUri, req.params(), parameter_to_remove_after_initial_request, childResourceName, SlashHandling.END_WITHOUT_SLASH);
+                        makeResourceSubRequest((collection ? collectionURI : removeParameters(collectionURI)), req, recursionLevel - DECREMENT_BY_ONE, subRequestCounter, recursionHandlerType, parentHandler, collection);
+                    }
                 }
             }
             // max. level reached
@@ -737,19 +719,6 @@ public class ExpansionHandler implements RuleChangesObserver{
                 handler.handle(new ResourceNode(collectionResourceContainer.getCollectionName(), jsonArray, eTag));
             }
         }
-    }
-
-    /**
-     * Adapts a call using a callback as a reactive publisher.
-     * @author lbovet
-     */
-    private static <R> Publisher<R> wrap(Consumer<Consumer<R>> call) {
-        return  Flowable.create(emitter -> {
-            call.accept( r -> {
-                emitter.onNext(r);
-                emitter.onComplete();
-            });
-        }, BackpressureStrategy.BUFFER);
     }
 
     /**
@@ -774,63 +743,4 @@ public class ExpansionHandler implements RuleChangesObserver{
     private String geteTag(MultiMap headers) {
         return headers != null && headers.contains(ETAG_HEADER) ? headers.get(ETAG_HEADER) : "";
     }
-
-    /**
-     * Type of the callback we use above. Cannot use {@link java.util.function}
-     * due to too many parameters and custom exceptions.
-     */
-    private static interface CollectionResourceHandler {
-        void handleCollectionResource(final String targetUri, final HttpServerRequest req, final int recursionLevel, final AtomicInteger subRequestCounter, final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, final DeltaHandler<ResourceNode> handler, final Buffer data, final String eTag) throws ResourceCollectionException;
-        void leaveResourceGotHandled();
-        void onAnyKindOfResourceJustHappened();
-    }
-
-    private class RecurseCollectionButNoopForOthers implements CollectionResourceHandler {
-        @Override public void handleCollectionResource(String a, HttpServerRequest b, int c, AtomicInteger d, RecursiveHandlerFactory.RecursiveHandlerTypes e, DeltaHandler<ResourceNode> f, Buffer g, String h) throws ResourceCollectionException {
-            ExpansionHandler.this.handleCollectionResource(a, b, c, d, e, f, g, h);
-            onAnyKindOfResourceJustHappened();
-        }
-        @Override public void leaveResourceGotHandled() { onAnyKindOfResourceJustHappened(); }
-        @Override public void onAnyKindOfResourceJustHappened() {/*noop*/}
-    }
-
-    /**
-     * Workaround to bundle needed args into ONE object for passing through
-     * flowable API. As we cannot pass dozens of references via flowable directly.
-     */
-    private static class ChildWithArgs {
-        /** Special marker so we can call our callback without doing anything. */
-        static final ChildWithArgs NOOP = new ChildWithArgs(null, null, null, -1, null, null, null, null, null) {
-            @Override
-            void handleCollectionResource() throws ResourceCollectionException {/*noop*/}
-        };
-        final ExpansionHandler expansionHandler;
-        final String targetUri;
-        final HttpServerRequest req;
-        final int recursionLevel;
-        final AtomicInteger subRequestCounter;
-        final RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType;
-        final DeltaHandler<ResourceNode> handler;
-        final Buffer data;
-        final String eTag;
-
-        private ChildWithArgs(ExpansionHandler expansionHandler, String targetUri, HttpServerRequest req, int recursionLevel, AtomicInteger subRequestCounter, RecursiveHandlerFactory.RecursiveHandlerTypes recursionHandlerType, DeltaHandler<ResourceNode> handler, Buffer data, String eTag) {
-            this.expansionHandler = expansionHandler;
-            this.targetUri = targetUri;
-            this.req = req;
-            this.recursionLevel = recursionLevel;
-            this.subRequestCounter = subRequestCounter;
-            this.recursionHandlerType = recursionHandlerType;
-            this.handler = handler;
-            this.data = data;
-            this.eTag = eTag;
-        }
-
-        void handleCollectionResource() throws ResourceCollectionException {
-            expansionHandler.handleCollectionResource(
-                    targetUri, req, recursionLevel, subRequestCounter,
-                    recursionHandlerType, handler, data, eTag);
-        }
-    }
-
 }

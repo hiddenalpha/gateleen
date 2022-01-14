@@ -28,8 +28,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  */
 public final class ExpansionDeltaUtil {
 
-    private static final String SLASH = "/";
-
     private static Logger log = LoggerFactory.getLogger(ExpansionDeltaUtil.class);
 
     private ExpansionDeltaUtil() {
@@ -78,7 +76,7 @@ public final class ExpansionDeltaUtil {
      */
     public static String extractCollectionFromPath(String path) {
         String extractedCollectionName = null;
-        String pathModified = removeFromEndOfString(path, SLASH);
+        String pathModified = removeFromEndOfString(path, "/");
         String[] pathSegments = pathModified.split("/");
         if (pathSegments.length > 0) {
             extractedCollectionName = pathSegments[pathSegments.length - 1];
@@ -115,34 +113,46 @@ public final class ExpansionDeltaUtil {
      * @return String
      */
     public static String constructRequestUri(String path, MultiMap params, List<String> paramsToRemove, String subResource, SlashHandling slashHandling) {
-        String result = path;
+
         if (paramsToRemove != null) {
             for (String paramToRemove : paramsToRemove) {
                 params.remove(paramToRemove);
             }
         }
 
-        boolean pathEndsWithSlash = result.endsWith(SLASH);
+        final StringBuilder result;
+        {
+            int assumedLength = path.length() + (subResource == null ? 0 : subResource.length()) + 4;
+            result = new StringBuilder(assumedLength);
+        }
+
+        result.append(path);
 
         if (subResource != null) {
-            if (pathEndsWithSlash) {
-                result = result + subResource;
-            } else {
-                result = result + SLASH + subResource;
+            if (result.charAt(result.length() - 1) != '/') {
+                result.append('/');
             }
+            result.append(subResource);
         }
 
-        if (slashHandling.equals(SlashHandling.END_WITH_SLASH)) {
-            if (!pathEndsWithSlash) {
-                result = result + SLASH;
-            }
-        } else if (slashHandling.equals(SlashHandling.END_WITHOUT_SLASH)) {
-            result = removeFromEndOfString(result, SLASH);
+        switch (slashHandling){
+            case END_WITH_SLASH:
+                if (result.charAt(result.length() - 1) != '/') {
+                    result.append('/');
+                }
+                break;
+            case END_WITHOUT_SLASH:
+                if (result.charAt(result.length() - 1) == '/') {
+                    result.deleteCharAt(result.length() - 1);
+                }
+                break;
         }
+
         if (!params.isEmpty()) {
-            result = result + "?" + ExpansionDeltaUtil.mapToDelimetedString(params, "&");
+            result.append('?').append(ExpansionDeltaUtil.mapToDelimetedString(params, "&"));
         }
-        return result;
+
+        return result.toString();
     }
 
     public enum SlashHandling {

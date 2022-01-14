@@ -480,7 +480,7 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
     }
 
     @Override
-    public String path() { return null; }
+    public String path() { return path; }
 
     @Override
     public String query() { return null; }
