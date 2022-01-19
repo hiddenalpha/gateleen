@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,6 +38,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
     private static final Logger LOG = LoggerFactory.getLogger(ResourcetreePreOrderPublisher.class);
     private final Queue<Runnable> tasks;
     private final HttpClient httpClient;
+    /* Without trailing slash */
     private final String url;
     private final String query;
     private final MultiMap headers;
@@ -49,7 +51,9 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         if (!m.matches()) {
             throw new IllegalArgumentException("Failed to parse uri: " + uri);
         }
-        this.url = m.group("url");
+        String url = m.group("url");
+        while (url.endsWith("/")) url = url.substring(0, url.length() - 1);
+        this.url = url;
         String query = m.group("query");
         this.query = (query == null) ? "" : query;
         this.headers = headers;
@@ -129,6 +133,8 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         private final MultiMap headers;
         /** Current recursion level */
         private final int level;
+        private final AtomicInteger pendingChilds = new AtomicInteger(0);
+        private final AtomicInteger iChild = new AtomicInteger(0);
         /** Index where this node here is in the parent */
         private HttpClientRequest req;
         private HttpClientResponse rsp;
@@ -188,7 +194,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
                 LOG.debug("Stream got canceled");
                 return;
             }
-            // assert(this.rsp == null)
+            //assert(this.rsp == null);
             this.rsp = rsp;
             int status = rsp.statusCode();
             if (status >= 200 && status <= 299) {
@@ -258,15 +264,39 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
                 return;
             }
             LOG.trace("Process childs at level {}/{}", level, maxdepth);
-            int iChild = 0;
-            for (String childName : childNames) {
-                LOG.trace("Process child {} in {}", iChild, url);
+            // +1 to ensure we never reach zero while iteration still running. Will be
+            // decremented again after loop has finished.
+            pendingChilds.incrementAndGet();
+            iterateNextChild();
+        }
+
+        private void iterateNextChild() {
+            int i = iChild.getAndIncrement();
+            if(i < childNames.size()){
+                String childName = childNames.get(i);
+                childNames.set(i, null); // Think for GC
+                LOG.trace("Process child {} in {}", i, url);
                 String subUrl = url.endsWith("/") ? (url + childName) : (url + '/' + childName);
+                pendingChilds.incrementAndGet();
                 disposable = new RecursionLevel(this, subUrl, headers, level + 1).asFlowable()
-                        .subscribe(emitter::onNext, emitter::onError, emitter::onComplete);
+                        .subscribe(emitter::onNext, emitter::onError, this::onChildDone);
+            }else{
+                // We call this for TWO reasons:
+                //  1. We did increment by one before loop start to prevent reaching zero
+                //     while iteration. Now its time to remove that headroom.
+                //  2. In case there are ZERO children, this also will call onComplete for us.
+                onChildDone();
             }
-            if (childNames.isEmpty()) {
+        }
+
+        private void onChildDone() {
+            int remaining = pendingChilds.decrementAndGet();
+            if (remaining > 0) {
+                iterateNextChild();
+            } else if (remaining == 0) {
                 emitter.onComplete();
+            } else {
+                throw new UnsupportedOperationException("TODO: Not impl yet");/*TODO*/
             }
         }
 
@@ -275,7 +305,8 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
                 LOG.debug("Stream got canceled");
                 return;
             }
-            emitter.onNext(new Node(url, url.length() - ResourcetreePreOrderPublisher.this.url.length(), true, null));
+            int relPathOffs = ResourcetreePreOrderPublisher.this.url.length();
+            emitter.onNext(new Node(url, relPathOffs, true, null));
         }
 
         private void publishDocumentResource(String url, Buffer body) {
@@ -283,7 +314,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
                 LOG.debug("Stream got canceled");
                 return;
             }
-            emitter.onNext(new Node(url, url.length() - ResourcetreePreOrderPublisher.this.url.length(), false, body));
+            emitter.onNext(new Node(url, ResourcetreePreOrderPublisher.this.url.length(), false, body));
         }
 
     }
@@ -291,16 +322,16 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
 
 
     public static class Node {
-        private final int relPathLength;
+        private final int relPathOffs;
         private final boolean isCollection;
         private final Buffer body;
         private String absPath;
         private String relPath;
         private String basename;
 
-        public Node(String absPath, int relPathLength, boolean isCollection, Buffer body) {
+        public Node(String absPath, int relPathOffs, boolean isCollection, Buffer body) {
             this.absPath = Objects.requireNonNull(absPath);
-            this.relPathLength = relPathLength;
+            this.relPathOffs = relPathOffs;
             this.isCollection = isCollection;
             this.body = body;
         }
@@ -322,7 +353,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
                 // No garbage created yet representing the relative path. Create now
                 // lazily because caller seems to really need it.
                 final String absPath = absPath();
-                int start = absPath.length() - relPathLength;
+                int start = relPathOffs;
                 int end = absPath.length();
                 if (start < 0) start = 0;
                 relPath = (end - start == 0) ? "/" : absPath.substring(start, end);
