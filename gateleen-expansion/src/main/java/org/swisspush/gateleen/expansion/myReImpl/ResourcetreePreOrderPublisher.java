@@ -155,9 +155,9 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         }
 
         private Flowable<Node> asFlowable() {
-            // I see "BUFFER" there. Sounds like some kind of memory-hog. I think
-            // end-to-end backpressure would be better (eg only performing requests
-            // when really requested) But I heard writing less code is better :)
+            // Due to using an unbound buffer here, there is no real backpressure. Implementing
+            // real backpressure would require to write more code. But theory says we MUST NOT
+            // write more code if shorter code can do it.
             return Flowable.create(this::onEmitter, BackpressureStrategy.BUFFER);
         }
 
