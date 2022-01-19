@@ -131,8 +131,11 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         private final String url;
         /** HTTP request headers to apply to outgoing requests */
         private final MultiMap headers;
+        /** Index of this node in the parents child list */
+        private final int thisIdx;
         /** Current recursion level */
         private final int level;
+        private Node node;
         private final AtomicInteger pendingChilds = new AtomicInteger(0);
         private final AtomicInteger iChild = new AtomicInteger(0);
         /** Index where this node here is in the parent */
@@ -144,13 +147,14 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         private Disposable disposable;
 
         public RecursionLevel(String url, MultiMap headers) {
-            this(null, url, headers, 1);
+            this(null, url, headers, 0, 1);
         }
 
-        private RecursionLevel(RecursionLevel parent, String url, MultiMap headers, int level) {
+        private RecursionLevel(RecursionLevel parent, String url, MultiMap headers, int thisIdx, int level) {
             this.parent = parent;
             this.url = url;
             this.headers = headers;
+            this.thisIdx = thisIdx;
             this.level = level;
         }
 
@@ -220,7 +224,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             Iterator<Map.Entry<String, Object>> it = bodyJson.iterator();
             if (!it.hasNext()) {
                 LOG.trace("Assume is NOT collection: {}", url);
-                publishDocumentResource(url, bodyBuf);
+                publishDocumentResource(url, thisIdx, bodyBuf);
                 emitter.onComplete();
                 return;
             }
@@ -228,7 +232,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             Object valueObj = entry.getValue();
             if (!(valueObj instanceof JsonArray)) {
                 LOG.trace("Assume is NOT collection: {}", url);
-                publishDocumentResource(url, bodyBuf);
+                publishDocumentResource(url, thisIdx, bodyBuf);
                 emitter.onComplete();
                 return;
             }
@@ -254,9 +258,9 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
                 LOG.debug("Stream got canceled");
                 return;
             }
-            // PreOrder iteration. So publish ourself.
+            // PreOrder iteration. So publish ourself
             // TODO Handle case when we ourself are a RESOURCE.
-            publishCollectionResource(url, null);
+            node = publishCollectionResource(url, thisIdx);
             // Verify depth
             if (level > maxdepth) {
                 LOG.debug("Maxdepth of {} reached.", maxdepth);
@@ -270,6 +274,10 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             iterateNextChild();
         }
 
+        private DirNode parentNode() {
+            return (parent == null) ? null : (DirNode) parent.node;
+        }
+
         private void iterateNextChild() {
             int i = iChild.getAndIncrement();
             if(i < childNames.size()){
@@ -278,7 +286,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
                 LOG.trace("Process child {} in {}", i, url);
                 String subUrl = url.endsWith("/") ? (url + childName) : (url + '/' + childName);
                 pendingChilds.incrementAndGet();
-                disposable = new RecursionLevel(this, subUrl, headers, level + 1).asFlowable()
+                disposable = new RecursionLevel(this, subUrl, headers, i, level + 1).asFlowable()
                         .subscribe(emitter::onNext, emitter::onError, this::onChildDone);
             }else{
                 // We call this for TWO reasons:
@@ -300,41 +308,60 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             }
         }
 
-        private void publishCollectionResource(String url, Buffer body) {
+        private DirNode publishCollectionResource(String url, int childIdx) {
             if (isCancelled) {
                 LOG.debug("Stream got canceled");
-                return;
+                return null;
             }
             int relPathOffs = ResourcetreePreOrderPublisher.this.url.length();
-            emitter.onNext(new Node(url, relPathOffs, true, null));
+            DirNode elem = new DirNode(parentNode(), url, relPathOffs, childIdx, level);
+            emitter.onNext(elem);
+            return elem;
         }
 
-        private void publishDocumentResource(String url, Buffer body) {
+        private LeaveNode publishDocumentResource(String url, int childIdx, Buffer body) {
             if (isCancelled) {
                 LOG.debug("Stream got canceled");
-                return;
+                return null;
             }
-            emitter.onNext(new Node(url, ResourcetreePreOrderPublisher.this.url.length(), false, body));
+            LeaveNode elem = new LeaveNode(parentNode(), url, ResourcetreePreOrderPublisher.this.url.length(),
+                    childIdx, level, body);
+            emitter.onNext(elem);
+            return elem;
         }
 
     }
 
 
 
-    public static class Node {
+    public static abstract class Node {
+        private final DirNode parent;
         private final int relPathOffs;
-        private final boolean isCollection;
-        private final Buffer body;
+        private final int childIdx;
+        private final int level;
         private String absPath;
         private String relPath;
         private String basename;
 
-        public Node(String absPath, int relPathOffs, boolean isCollection, Buffer body) {
+        private Node(DirNode parent, String absPath, int relPathOffs, int childIdx, int level) {
+            this.parent = parent;
             this.absPath = Objects.requireNonNull(absPath);
             this.relPathOffs = relPathOffs;
-            this.isCollection = isCollection;
-            this.body = body;
+            this.childIdx = childIdx;
+            this.level = level;
         }
+
+        public abstract boolean isCollection();
+
+        public boolean isDocument(){ return !isCollection(); }
+
+        public DirNode parent(){ return parent; }
+
+        /** Index of this child in the parents node child list */
+        public int childIdx(){ return childIdx; }
+
+        /** Recursion level of this node */
+        public int level(){ return level; }
 
         /** Absolute path including the part from the original URL (Eg: '/your/v1/api/foo/bar') */
         public String absPath() {
@@ -371,13 +398,27 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             return basename;
         }
 
-        public boolean isCollection() {
-            return isCollection;
+    }
+
+    public static class DirNode extends Node {
+        private DirNode(DirNode parent, String absPath, int relPathOffs, int childIdx, int level) {
+            super(parent, absPath, relPathOffs, childIdx, level);
         }
 
-        public Buffer body() {
-            return body;
+        @Override public boolean isCollection() { return true; }
+    }
+
+    public static class LeaveNode extends Node {
+        private final Buffer body;
+
+        private LeaveNode(DirNode parent, String absPath, int relPathOffs, int childIdx, int level, Buffer body) {
+            super(parent, absPath, relPathOffs, childIdx, level);
+            this.body = body;
         }
+
+        @Override public boolean isCollection() { return false; }
+
+        public Buffer body(){ return body; }
     }
 
 }

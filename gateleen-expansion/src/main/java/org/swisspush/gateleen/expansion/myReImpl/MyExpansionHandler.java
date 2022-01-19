@@ -15,13 +15,13 @@ import org.swisspush.gateleen.core.util.ExpansionDeltaUtil;
 import org.swisspush.gateleen.core.util.ResponseStatusCodeLogUtil;
 import org.swisspush.gateleen.core.util.StatusCode;
 import org.swisspush.gateleen.expansion.ExpansionHandler;
+import org.swisspush.gateleen.expansion.myReImpl.ResourcetreePreOrderPublisher.LeaveNode;
 import org.swisspush.gateleen.expansion.myReImpl.ResourcetreePreOrderPublisher.Node;
 import org.swisspush.gateleen.routing.Rule;
 import org.swisspush.gateleen.routing.RuleFeaturesProvider;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 import static org.swisspush.gateleen.core.util.ExpansionDeltaUtil.SlashHandling.END_WITH_SLASH;
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.EXPAND_ON_BACKEND;
@@ -33,7 +33,7 @@ public class MyExpansionHandler implements RuleChangesObserver  {
 
     private static final String EXPAND_PARAM = "expand";
     private static final Logger LOG = LoggerFactory.getLogger(MyExpansionHandler.class);
-    private static final long MAX_INFLIGHT_SUBREQUESTS = 16;
+    private static final long MAX_INPROGRESS_REQUESTS = 16;
     private final Vertx vertx;
     final HttpClient httpClient;
     private RuleFeaturesProvider ruleFeaturesProvider = new RuleFeaturesProvider(new ArrayList<>());
@@ -139,6 +139,7 @@ public class MyExpansionHandler implements RuleChangesObserver  {
         private final HttpServerRequest downstreamReq;
         private final HttpServerResponse downstreamRsp;
         private Subscription subscription;
+        private int previousLevel;
 
         private ExpansionRequest(HttpServerRequest downstreamReq) {
             this.startMs = System.currentTimeMillis();
@@ -185,16 +186,39 @@ public class MyExpansionHandler implements RuleChangesObserver  {
             // Use chunked for downstream. Usually its not a good idea to collect
             // the whole subtree into memory beforehand.
             downstreamRsp.setChunked(true);
-            subscription.request(MAX_INFLIGHT_SUBREQUESTS);
+            subscription.request(MAX_INPROGRESS_REQUESTS);
         }
 
         @Override
-        public void onNext(Node res) {
-            // We got one, so we order one more.
+        public void onNext(Node node) {
+            LOG.trace("onNext({}, {})", node.getClass().getSimpleName(), node.relPath());
+            // We got one, so we order another one.
             subscription.request(1);
-            String typeStr = res.isCollection() ? "Collection" : "Resource";
-            LOG.debug("onNext({}, {})", res.relPath(), typeStr);
-            downstreamRsp.write(typeStr + " - " + res.relPath() + "\n");
+            for (; node.level() < previousLevel; --previousLevel) {
+                // Close previous (deeper) collections if any.
+                downstreamRsp.write("}");
+            }
+            if (node.level() > previousLevel) {
+                if (node.childIdx() > 0) {
+                    // Every except the 1st child need a comma as separator to the previous node.
+                    downstreamRsp.write(",");
+                }
+                // Go down one level
+                downstreamRsp.write("{");
+            } else if (node.level() == previousLevel) {
+                // Add another child to the same node
+                downstreamRsp.write(",");
+//            } else {
+//                assert("MUST NOT reach this branch" == null);
+            }
+
+            downstreamRsp.write("\"");
+            downstreamRsp.write(node.basename().replace("\"", "\\\""));
+            downstreamRsp.write("\":");
+            if (node.isDocument()) {
+                downstreamRsp.write(((LeaveNode) node).body());
+            }
+            previousLevel = node.level();
         }
 
         @Override
@@ -204,19 +228,25 @@ public class MyExpansionHandler implements RuleChangesObserver  {
                 downstreamRsp.close();
             } else {
                 downstreamRsp.setStatusCode(500);
-                downstreamRsp.write(thr.getClass().getName() + "\n");
+                downstreamRsp.write("Request failed (fc601daceb6d7df1f601f41be54ddd01):\n")
+                        .write(thr.getClass().getName()).write("\n");
             }
         }
 
         @Override
         public void onComplete() {
+            while (previousLevel-- > 0) {
+                // Finalize the not yet closed levels.
+                downstreamRsp.write("}");
+            }
+            // Expand request complete.
+            downstreamRsp.end();
             long durationMs = System.currentTimeMillis() - startMs;
-            if (durationMs > 10_000) {
+            if (durationMs > 30_000) {
                 LOG.info("Expand took {}ms: {}", durationMs, downstreamReq.uri());
             } else {
-                LOG.trace("Expand took {}ms: {}", durationMs, downstreamReq.uri());
+                LOG.debug("Expand took {}ms: {}", durationMs, downstreamReq.uri());
             }
-            downstreamRsp.end();
         }
     }
 
