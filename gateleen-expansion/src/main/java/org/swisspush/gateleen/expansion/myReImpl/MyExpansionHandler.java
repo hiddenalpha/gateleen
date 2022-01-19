@@ -33,9 +33,8 @@ public class MyExpansionHandler implements RuleChangesObserver  {
 
     private static final String EXPAND_PARAM = "expand";
     private static final Logger LOG = LoggerFactory.getLogger(MyExpansionHandler.class);
-    private static final long MAX_INPROGRESS_REQUESTS = 16;
     private final Vertx vertx;
-    final HttpClient httpClient;
+    private final HttpClient httpClient;
     private RuleFeaturesProvider ruleFeaturesProvider = new RuleFeaturesProvider(new ArrayList<>());
     int maxExpansionLevelHard = Integer.MAX_VALUE;
     int maxExpansionLevelSoft = Integer.MAX_VALUE;
@@ -67,7 +66,7 @@ public class MyExpansionHandler implements RuleChangesObserver  {
     }
 
     public void handleExpansionRecursion(HttpServerRequest downstreamReq) {
-        new ExpansionRequest(downstreamReq).handleExpand();
+        new ExpansionRequest(vertx, httpClient, this, downstreamReq).handleExpand();
     }
 
     /**
@@ -122,132 +121,6 @@ public class MyExpansionHandler implements RuleChangesObserver  {
         rsp.setStatusMessage(StatusCode.BAD_REQUEST.getStatusMessage());
         rsp.end(body);
         req.resume();
-    }
-
-    private String constructSubUri(String path, MultiMap params, String childName, ExpansionDeltaUtil.SlashHandling endWithSlash) {
-        String uri = ExpansionDeltaUtil.constructRequestUri(path, params, parameter_to_remove_for_all_request, childName, endWithSlash);
-        LOG.debug("Constructed uri: {}", uri);
-        return uri;
-    }
-
-
-
-    private class ExpansionRequest implements Subscriber<Node> {
-
-        private final long startMs;
-        private final Logger requestLog;
-        private final HttpServerRequest downstreamReq;
-        private final HttpServerResponse downstreamRsp;
-        private Subscription subscription;
-        private int previousLevel;
-
-        private ExpansionRequest(HttpServerRequest downstreamReq) {
-            this.startMs = System.currentTimeMillis();
-            this.requestLog = RequestLoggerFactory.getLogger(ExpansionHandler.class, downstreamReq);
-            this.downstreamReq = downstreamReq;
-            this.downstreamRsp = downstreamReq.response();
-        }
-
-        void handleExpand() {
-            downstreamReq.pause();
-
-            Integer expandLevel = extractExpandParamValue(downstreamReq, requestLog);
-            if (expandLevel == null) {
-                respondBadRequest(downstreamReq, "Expand parameter is not valid. Must be a positive number");
-                return;
-            }
-            if (expandLevel > maxExpansionLevelHard) {
-                String message = "Expand level '" + expandLevel + "' is greater than the maximum expand level '" + maxExpansionLevelHard + "'";
-                requestLog.info(message);
-                respondBadRequest(downstreamReq, message);
-                return;
-            }
-            if (expandLevel > maxExpansionLevelSoft) {
-                requestLog.warn("Expand level '{}' is greater than the maximum soft expand level '{}'. Using '{}' instead",
-                        expandLevel, maxExpansionLevelSoft, maxExpansionLevelSoft);
-                expandLevel = maxExpansionLevelSoft;
-            }
-
-            if (expandLevel > 1 && isStorageExpand(downstreamReq.uri())) {
-                respondBadRequest(downstreamReq, "Expand values higher than 1 are not supported for storageExpand requests");
-                return;
-            }
-
-            downstreamReq.params().remove("expand");
-            final String homeUri = constructSubUri(downstreamReq.path(), downstreamReq.params(), null, END_WITH_SLASH);
-
-            new ResourcetreePreOrderPublisher(vertx, httpClient, homeUri, downstreamReq.headers(), expandLevel)
-                    .subscribe(this);
-        }
-
-        @Override
-        public void onSubscribe(Subscription subscription) {
-            this.subscription = subscription;
-            // Use chunked for downstream. Usually its not a good idea to collect
-            // the whole subtree into memory beforehand.
-            downstreamRsp.setChunked(true);
-            subscription.request(MAX_INPROGRESS_REQUESTS);
-        }
-
-        @Override
-        public void onNext(Node node) {
-            LOG.trace("onNext({}, {})", node.getClass().getSimpleName(), node.relPath());
-            // We got one, so we order another one.
-            subscription.request(1);
-            for (; node.level() < previousLevel; --previousLevel) {
-                // Close previous (deeper) collections if any.
-                downstreamRsp.write("}");
-            }
-            if (node.level() > previousLevel) {
-                if (node.childIdx() > 0) {
-                    // Every except the 1st child need a comma as separator to the previous node.
-                    downstreamRsp.write(",");
-                }
-                // Go down one level
-                downstreamRsp.write("{");
-            } else if (node.level() == previousLevel) {
-                // Add another child to the same node
-                downstreamRsp.write(",");
-//            } else {
-//                assert("MUST NOT reach this branch" == null);
-            }
-
-            downstreamRsp.write("\"");
-            downstreamRsp.write(node.basename().replace("\"", "\\\""));
-            downstreamRsp.write("\":");
-            if (node.isDocument()) {
-                downstreamRsp.write(((LeaveNode) node).body());
-            }
-            previousLevel = node.level();
-        }
-
-        @Override
-        public void onError(Throwable thr) {
-            LOG.warn("Expand request failed: {}", downstreamReq.uri(), thr);
-            if (downstreamRsp.headWritten()) {
-                downstreamRsp.close();
-            } else {
-                downstreamRsp.setStatusCode(500);
-                downstreamRsp.write("Request failed (fc601daceb6d7df1f601f41be54ddd01):\n")
-                        .write(thr.getClass().getName()).write("\n");
-            }
-        }
-
-        @Override
-        public void onComplete() {
-            while (previousLevel-- > 0) {
-                // Finalize the not yet closed levels.
-                downstreamRsp.write("}");
-            }
-            // Expand request complete.
-            downstreamRsp.end();
-            long durationMs = System.currentTimeMillis() - startMs;
-            if (durationMs > 30_000) {
-                LOG.info("Expand took {}ms: {}", durationMs, downstreamReq.uri());
-            } else {
-                LOG.debug("Expand took {}ms: {}", durationMs, downstreamReq.uri());
-            }
-        }
     }
 
 }

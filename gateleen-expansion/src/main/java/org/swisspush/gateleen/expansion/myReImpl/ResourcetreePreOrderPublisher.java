@@ -30,6 +30,9 @@ import static io.vertx.core.http.HttpMethod.GET;
 import static org.swisspush.gateleen.expansion.myReImpl.ResourcetreePreOrderPublisher.Node;
 
 
+/**
+ * Iterates the resource tree named by specified URL using a pre-order traversal.
+ */
 public class ResourcetreePreOrderPublisher extends Flowable<Node> {
 
     private static final int SUB_REQ_TIMEOUT_MS = 120000;
@@ -44,6 +47,15 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
     private final MultiMap headers;
     private final int maxdepth;
 
+    /**
+     * Create a {@link ResourcetreePreOrderPublisher}.
+     * @param uri
+     *      The URI in the resource tree to perform the iteration within.
+     * @param headers
+     *      The headers to use for requests perfomed in scope of the iteration.
+     * @param maxdepth
+     *      Maximum depth to iterate into the tree.
+     */
     public ResourcetreePreOrderPublisher(Vertx vertx, HttpClient httpClient, String uri, MultiMap headers, int maxdepth) {
         this.tasks = new ArrayDeque<>();
         this.httpClient = httpClient;
@@ -140,11 +152,8 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         private final AtomicInteger iChild = new AtomicInteger(0);
         /** Index where this node here is in the parent */
         private HttpClientRequest req;
-        private HttpClientResponse rsp;
         private List<String> childNames;
         private FlowableEmitter<Node> emitter;
-        private volatile boolean isCancelled;
-        private Disposable disposable;
 
         public RecursionLevel(String url, MultiMap headers) {
             this(null, url, headers, 0, 1);
@@ -186,20 +195,8 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             req.end();
         }
 
-        private void onCancel() {
-            isCancelled = true;
-            if (disposable != null) {
-                disposable.dispose();
-            }
-        }
-
         private void onResponse(HttpClientResponse rsp) {
-            if (isCancelled) {
-                LOG.debug("Stream got canceled");
-                return;
-            }
             //assert(this.rsp == null);
-            this.rsp = rsp;
             int status = rsp.statusCode();
             if (status >= 200 && status <= 299) {
                 rsp.exceptionHandler(emitter::onError);
@@ -210,10 +207,6 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         }
 
         private void onResponseBody(Buffer bodyBuf) {
-            if (isCancelled) {
-                LOG.debug("Stream got canceled");
-                return;
-            }
             JsonObject bodyJson;
             try {
                 bodyJson = new JsonObject(bodyBuf);
@@ -223,7 +216,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             }
             Iterator<Map.Entry<String, Object>> it = bodyJson.iterator();
             if (!it.hasNext()) {
-                LOG.trace("Assume is NOT collection: {}", url);
+                LOG.trace("Too few entries. Assume document: {}", url);
                 publishDocumentResource(url, thisIdx, bodyBuf);
                 emitter.onComplete();
                 return;
@@ -231,7 +224,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             Map.Entry<String, Object> entry = it.next();
             Object valueObj = entry.getValue();
             if (!(valueObj instanceof JsonArray)) {
-                LOG.trace("Assume is NOT collection: {}", url);
+                LOG.trace("Not an array. Assume document: {}", url);
                 publishDocumentResource(url, thisIdx, bodyBuf);
                 emitter.onComplete();
                 return;
@@ -245,33 +238,29 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             }
             childNames = ((JsonArray) valueObj).getList();
             if (it.hasNext()) {
-                // TODO should we treat it as a DocumentResource in this case?
-                emitter.onError(new IllegalArgumentException("Too many fields in collection response: " + url));
+                childNames = null; // GC
+                LOG.trace("Too many entries. Assume document: {}", url);
+                publishDocumentResource(url, thisIdx, bodyBuf);
+                emitter.onComplete();
                 return;
             }
 
-            processNode();
-        }
-
-        private void processNode() {
-            if (isCancelled) {
-                LOG.debug("Stream got canceled");
-                return;
-            }
             // PreOrder iteration. So publish ourself
-            // TODO Handle case when we ourself are a RESOURCE.
             node = publishCollectionResource(url, thisIdx);
-            // Verify depth
+
+            // Then consider children.
             if (level > maxdepth) {
                 LOG.debug("Maxdepth of {} reached.", maxdepth);
                 emitter.onComplete();
                 return;
+            }else{
+                LOG.trace("Process childs at level {}/{}", level, maxdepth);
+                // +1 to ensure we never reach zero while iteration still running. Will be
+                // decremented again after loop has finished.
+                pendingChilds.incrementAndGet();
+                // Trigger the 1st one.
+                iterateNextChild();
             }
-            LOG.trace("Process childs at level {}/{}", level, maxdepth);
-            // +1 to ensure we never reach zero while iteration still running. Will be
-            // decremented again after loop has finished.
-            pendingChilds.incrementAndGet();
-            iterateNextChild();
         }
 
         private DirNode parentNode() {
@@ -286,7 +275,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
                 LOG.trace("Process child {} in {}", i, url);
                 String subUrl = url.endsWith("/") ? (url + childName) : (url + '/' + childName);
                 pendingChilds.incrementAndGet();
-                disposable = new RecursionLevel(this, subUrl, headers, i, level + 1).asFlowable()
+                new RecursionLevel(this, subUrl, headers, i, level + 1).asFlowable()
                         .subscribe(emitter::onNext, emitter::onError, this::onChildDone);
             }else{
                 // We call this for TWO reasons:
@@ -309,25 +298,15 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         }
 
         private DirNode publishCollectionResource(String url, int childIdx) {
-            if (isCancelled) {
-                LOG.debug("Stream got canceled");
-                return null;
-            }
             int relPathOffs = ResourcetreePreOrderPublisher.this.url.length();
             DirNode elem = new DirNode(parentNode(), url, relPathOffs, childIdx, level);
             emitter.onNext(elem);
             return elem;
         }
 
-        private LeaveNode publishDocumentResource(String url, int childIdx, Buffer body) {
-            if (isCancelled) {
-                LOG.debug("Stream got canceled");
-                return null;
-            }
-            LeaveNode elem = new LeaveNode(parentNode(), url, ResourcetreePreOrderPublisher.this.url.length(),
-                    childIdx, level, body);
-            emitter.onNext(elem);
-            return elem;
+        private void publishDocumentResource(String url, int childIdx, Buffer body) {
+            emitter.onNext(new LeaveNode(parentNode(), url, ResourcetreePreOrderPublisher.this.url.length(),
+                    childIdx, level, body));
         }
 
     }
@@ -365,11 +344,13 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
 
         /** Absolute path including the part from the original URL (Eg: '/your/v1/api/foo/bar') */
         public String absPath() {
-            int lastNonSlash = absPath.length();
-            for (; lastNonSlash >= 0 && absPath.charAt(lastNonSlash-1) == '/'; --lastNonSlash) ;
-            if (lastNonSlash != absPath.length()) {
-                // Remove trailing slashes.
-                absPath = absPath.substring(0, lastNonSlash);
+            if (absPath.endsWith("/")) {
+                int lastNonSlash = absPath.length();
+                for (; lastNonSlash >= 0 && absPath.charAt(lastNonSlash-1) == '/'; --lastNonSlash) ;
+                if (lastNonSlash != absPath.length()) {
+                    // Remove trailing slashes.
+                    absPath = absPath.substring(0, lastNonSlash);
+                }
             }
             return absPath;
         }
