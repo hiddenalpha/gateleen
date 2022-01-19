@@ -1,6 +1,9 @@
 package org.swisspush.gateleen.expansion.myReImpl;
 
+import io.reactivex.BackpressureStrategy;
 import io.reactivex.Flowable;
+import io.reactivex.FlowableEmitter;
+import io.reactivex.disposables.Disposable;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -16,10 +19,7 @@ import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
@@ -35,6 +35,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
     private static final String SELF_REQUEST_HEADER = "x-self-request";
     private static final Pattern PAT_URI = Pattern.compile("^(?<url>[^?]+)(?:\\?(?<query>[^?]*))?$");
     private static final Logger LOG = LoggerFactory.getLogger(ResourcetreePreOrderPublisher.class);
+    private final Queue<Runnable> tasks;
     private final HttpClient httpClient;
     private final String url;
     private final String query;
@@ -42,6 +43,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
     private final int maxdepth;
 
     public ResourcetreePreOrderPublisher(Vertx vertx, HttpClient httpClient, String uri, MultiMap headers, int maxdepth) {
+        this.tasks = new ArrayDeque<>();
         this.httpClient = httpClient;
         Matcher m = PAT_URI.matcher(uri);
         if (!m.matches()) {
@@ -63,10 +65,11 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
 
     private class SubscriptionImpl implements Subscription {
 
-        private final Subscriber<? super Node> subscriber;
+        private Subscriber<? super Node> subscriber;
         private final AtomicBoolean isrunning = new AtomicBoolean(false);
-        private volatile boolean cancelRequest = false;
         private final AtomicLong remainingRequests = new AtomicLong(0);
+        private volatile boolean cancelRequest = false;
+        private Disposable disposable;
 
         public SubscriptionImpl(Subscriber<? super Node> subscriber) {
             this.subscriber = subscriber;
@@ -100,14 +103,17 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         @Override
         public void cancel() {
             cancelRequest = true;
+            if (disposable != null) {
+                disposable.dispose();
+            }
         }
 
         private void start() {
-            new RecursionLevel(this, url, headers, subscriber).run(this::onChildDone);
-        }
-
-        private void onChildDone() {
-            subscriber.onComplete();
+            disposable = new RecursionLevel(url, headers).asFlowable()
+                    // I did like to use: flowable.subscribe(subscriber)
+                    // But then it throws like "Can only subscribe once" exception. Using this
+                    // other overload, it seems to work as expected :-p
+                    .subscribe(subscriber::onNext, subscriber::onError, subscriber::onComplete);
         }
 
     }
@@ -115,66 +121,86 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
 
 
     private class RecursionLevel {
-        private final SubscriptionImpl subscription;
+        /** Our parent recursion level */
         private final RecursionLevel parent;
-        private final Subscriber<? super Node> subscriber;
+        /** URL for this recursion level */
         private final String url;
+        /** HTTP request headers to apply to outgoing requests */
         private final MultiMap headers;
+        /** Current recursion level */
         private final int level;
-        private Runnable onDone;
+        /** Index where this node here is in the parent */
         private HttpClientRequest req;
         private HttpClientResponse rsp;
         private List<String> childNames;
-        private int iChild = 0;
+        private FlowableEmitter<Node> emitter;
+        private volatile boolean isCancelled;
+        private Disposable disposable;
 
-        public RecursionLevel(SubscriptionImpl subscription, String url, MultiMap headers, Subscriber<? super Node> subscriber) {
-            this(subscription, null, url, headers, 1, subscriber);
+        public RecursionLevel(String url, MultiMap headers) {
+            this(null, url, headers, 1);
         }
 
-        private RecursionLevel(SubscriptionImpl subscription, RecursionLevel parent, String url, MultiMap headers, int level, Subscriber<? super Node> subscriber) {
-            this.subscription = subscription;
+        private RecursionLevel(RecursionLevel parent, String url, MultiMap headers, int level) {
             this.parent = parent;
-            this.subscriber = subscriber;
             this.url = url;
             this.headers = headers;
             this.level = level;
         }
 
-        private void run(Runnable onDone) {
-            if (subscription.cancelRequest) {
-                LOG.debug("Stream got canceled");
-                return;
+        private Flowable<Node> asFlowable() {
+            // I see "BUFFER" there. Sounds like some kind of memory-hog. I think
+            // end-to-end backpressure would be better (eg only performing requests
+            // when really requested) But I heard writing less code is better :)
+            return Flowable.create(this::onEmitter, BackpressureStrategy.BUFFER);
+        }
+
+        private <T> void onEmitter(FlowableEmitter<Node> emitter) {
+            if (this.emitter != null) {
+                // I guess should not happen. But could not yet find any useful hint in
+                // doc how many times we get called.
+                throw new IllegalStateException("Unexpectedly got yet another emitter");
             }
-            this.onDone = onDone;
+            // Setup emitter
+            this.emitter = emitter;
+//            emitter.setCancellable(this::onCancel); // TODO why does this call the callback immediately?
+            // Initiate request.
             req = httpClient.request(GET, url +'?'+ query, this::onResponse);
+            req.exceptionHandler(emitter::onError);
             req.setTimeout(SUB_REQ_TIMEOUT_MS);
-            //req.setChunked(true);
             if (headers != null) {
                 req.headers().setAll(headers);
             }
             req.headers().set("Accept", "application/json");
             req.headers().set(SELF_REQUEST_HEADER, "true");
-            req.exceptionHandler(subscriber::onError);
             req.end();
         }
 
+        private void onCancel() {
+            isCancelled = true;
+            if (disposable != null) {
+                disposable.dispose();
+            }
+        }
+
         private void onResponse(HttpClientResponse rsp) {
-            if (subscription.cancelRequest) {
+            if (isCancelled) {
                 LOG.debug("Stream got canceled");
                 return;
             }
+            // assert(this.rsp == null)
             this.rsp = rsp;
             int status = rsp.statusCode();
             if (status >= 200 && status <= 299) {
-                rsp.exceptionHandler(subscriber::onError);
+                rsp.exceptionHandler(emitter::onError);
                 rsp.bodyHandler(this::onResponseBody);
             } else {
-                subscriber.onError(new HttpStatusException(status));
+                emitter.onError(new HttpStatusException(status));
             }
         }
 
         private void onResponseBody(Buffer bodyBuf) {
-            if (subscription.cancelRequest) {
+            if (isCancelled) {
                 LOG.debug("Stream got canceled");
                 return;
             }
@@ -182,132 +208,82 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             try {
                 bodyJson = new JsonObject(bodyBuf);
             } catch (DecodeException e) {
-                subscriber.onError(new DecodeException("Json parse failed for: " + url, e));
+                emitter.onError(new DecodeException("Json parse failed for: " + url, e));
                 return;
             }
             Iterator<Map.Entry<String, Object>> it = bodyJson.iterator();
             if (!it.hasNext()) {
                 LOG.trace("Assume is NOT collection: {}", url);
                 publishDocumentResource(url, bodyBuf);
-                if (onDone != null) onDone.run();
+                emitter.onComplete();
                 return;
             }
             Map.Entry<String, Object> entry = it.next();
-            String key = entry.getKey();
             Object valueObj = entry.getValue();
             if (!(valueObj instanceof JsonArray)) {
                 LOG.trace("Assume is NOT collection: {}", url);
                 publishDocumentResource(url, bodyBuf);
-                if (onDone != null) onDone.run();
+                emitter.onComplete();
                 return;
             }
             // Make sure list only contains expected types.
             for (Object childObj : ((JsonArray) valueObj).getList()) {
                 if (!(childObj instanceof String)) {
-                    subscriber.onError(new ClassCastException("String expected but got " + childObj.getClass().getSimpleName() + " for: " + url));
+                    emitter.onError(new ClassCastException("String expected but got " + childObj.getClass().getSimpleName() + " for: " + url));
                     return;
                 }
             }
             childNames = ((JsonArray) valueObj).getList();
             if (it.hasNext()) {
-                subscriber.onError(new IllegalArgumentException("Too many fields in collection response: " + url));
+                // TODO should we treat it as a DocumentResource in this case?
+                emitter.onError(new IllegalArgumentException("Too many fields in collection response: " + url));
                 return;
             }
-            processNextEntry();
+
+            processNode();
         }
 
-        private void processNextEntry() {
-            if (subscription.cancelRequest) {
+        private void processNode() {
+            if (isCancelled) {
                 LOG.debug("Stream got canceled");
                 return;
             }
-            if (!reduceRemainingDemand()) {
-                return; // Don't produce more. subscriber already satisfied.
-            }
-            final int i = iChild++;
-            if (i == 0) {
-                // PreOrder iteration. So publish ourself (except the root node).
-                // TODO Handle case when we ourself are a resource.
-                publishCollectionResource(url, null);
-            }
-            // Take a look at maxdepth
+            // PreOrder iteration. So publish ourself.
+            // TODO Handle case when we ourself are a RESOURCE.
+            publishCollectionResource(url, null);
+            // Verify depth
             if (level > maxdepth) {
                 LOG.debug("Maxdepth of {} reached.", maxdepth);
-                if (onDone != null) onDone.run();
+                emitter.onComplete();
                 return;
-            } else {
-                LOG.trace("Reached level {} of {}", level, maxdepth);
             }
-            // Then go on with childs.
-            if (i < childNames.size()) {
-                LOG.trace("Process child {} in {}", i, url);
-                String childName = childNames.get(i);
-                childNames.set(i, null); // Be kind to GC
+            LOG.trace("Process childs at level {}/{}", level, maxdepth);
+            int iChild = 0;
+            for (String childName : childNames) {
+                LOG.trace("Process child {} in {}", iChild, url);
                 String subUrl = url.endsWith("/") ? (url + childName) : (url + '/' + childName);
-                new RecursionLevel(subscription, this, subUrl, headers, level + 1, subscriber).run(this::onChildDone);
-            } else {
-                LOG.trace("All childs streamed within {}", url);
-                if (onDone != null) {
-                    onDone.run();
-                }
+                disposable = new RecursionLevel(this, subUrl, headers, level + 1).asFlowable()
+                        .subscribe(emitter::onNext, emitter::onError, emitter::onComplete);
             }
-        }
-
-        private boolean reduceRemainingDemand() {
-            while (true) {
-                long demand = subscription.remainingRequests.get();
-                if (demand < 1) {
-                    return false; // Nothing we could decrement.
-                }
-                if (subscription.remainingRequests.compareAndSet(demand, demand - 1)) {
-                    return true; // Successfully decremented
-                }
-                // Atomic update failed. Try again.
+            if (childNames.isEmpty()) {
+                emitter.onComplete();
             }
         }
 
         private void publishCollectionResource(String url, Buffer body) {
-            if (subscription.cancelRequest) {
+            if (isCancelled) {
                 LOG.debug("Stream got canceled");
                 return;
             }
-            subscriber.onNext(new Node(url, url.length() - ResourcetreePreOrderPublisher.this.url.length(), true, null));
+            emitter.onNext(new Node(url, url.length() - ResourcetreePreOrderPublisher.this.url.length(), true, null));
         }
 
         private void publishDocumentResource(String url, Buffer body) {
-            if (subscription.cancelRequest) {
+            if (isCancelled) {
                 LOG.debug("Stream got canceled");
                 return;
             }
-            subscriber.onNext(new Node(url, url.length() - ResourcetreePreOrderPublisher.this.url.length(), false, body));
-        }
-
-        private void onChildDone() {
-            while(true) {
-                if (subscription.cancelRequest) {
-                    LOG.debug("Stream got canceled");
-                    return;
-                }
-                long oldVal = subscription.remainingRequests.get();
-                if(oldVal == Long.MAX_VALUE){
-                    LOG.trace("Unbound. Continue streaming.");
-                    processNextEntry();
-                    return;
-                }
-                if(oldVal <= 0){
-                    LOG.debug("Requested amount provided. Pause stream.");
-                    return;
-                }
-                long newVal = oldVal - 1;
-                if (subscription.remainingRequests.compareAndSet(oldVal, newVal)) {
-                    LOG.trace("Still elements wanted. Go ahead.");
-                    processNextEntry();
-                    return;
-                }else{
-                    LOG.debug("Atomic value has changed in meantime. Need to try again.");
-                    // loop
-                }
-            }
+            emitter.onNext(new Node(url, url.length() - ResourcetreePreOrderPublisher.this.url.length(), false, body));
         }
 
     }
