@@ -171,6 +171,8 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             // Due to using an unbound buffer here, there is no real backpressure. Implementing
             // real backpressure would require to write more code. But theory says we MUST NOT
             // write more code if shorter code can do it.
+            // If we like to implement REAL backpressure, please open an issue to request its
+            // implementation.
             return Flowable.create(this::onEmitter, BackpressureStrategy.BUFFER);
         }
 
@@ -217,7 +219,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             Iterator<Map.Entry<String, Object>> it = bodyJson.iterator();
             if (!it.hasNext()) {
                 LOG.trace("Too few entries. Assume document: {}", url);
-                publishDocumentResource(url, thisIdx, bodyBuf);
+                publishDocumentResource(url, thisIdx, bodyBuf, bodyJson);
                 emitter.onComplete();
                 return;
             }
@@ -225,7 +227,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             Object valueObj = entry.getValue();
             if (!(valueObj instanceof JsonArray)) {
                 LOG.trace("Not an array. Assume document: {}", url);
-                publishDocumentResource(url, thisIdx, bodyBuf);
+                publishDocumentResource(url, thisIdx, bodyBuf, bodyJson);
                 emitter.onComplete();
                 return;
             }
@@ -240,7 +242,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             if (it.hasNext()) {
                 childNames = null; // GC
                 LOG.trace("Too many entries. Assume document: {}", url);
-                publishDocumentResource(url, thisIdx, bodyBuf);
+                publishDocumentResource(url, thisIdx, bodyBuf, bodyJson);
                 emitter.onComplete();
                 return;
             }
@@ -304,9 +306,9 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             return elem;
         }
 
-        private void publishDocumentResource(String url, int childIdx, Buffer body) {
+        private void publishDocumentResource(String url, int childIdx, Buffer bodyBuf, JsonObject bodyJson) {
             emitter.onNext(new LeaveNode(parentNode(), url, ResourcetreePreOrderPublisher.this.url.length(),
-                    childIdx, level, body));
+                    childIdx, level, bodyBuf, bodyJson));
         }
 
     }
@@ -390,16 +392,20 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
     }
 
     public static class LeaveNode extends Node {
-        private final Buffer body;
+        private final Buffer bodyBuf;
+        private final JsonObject bodyJson;
 
-        private LeaveNode(DirNode parent, String absPath, int relPathOffs, int childIdx, int level, Buffer body) {
+        private LeaveNode(DirNode parent, String absPath, int relPathOffs, int childIdx, int level, Buffer bodyBuf, JsonObject bodyJson) {
             super(parent, absPath, relPathOffs, childIdx, level);
-            this.body = body;
+            this.bodyBuf = bodyBuf;
+            this.bodyJson = bodyJson;
         }
 
         @Override public boolean isCollection() { return false; }
 
-        public Buffer body(){ return body; }
+        public Buffer bodyAsBuffer(){ return bodyBuf; }
+
+        public JsonObject bodyAsJson(){ return bodyJson; }
     }
 
 }

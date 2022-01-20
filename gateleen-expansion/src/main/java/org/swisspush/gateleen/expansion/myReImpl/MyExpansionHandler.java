@@ -1,29 +1,25 @@
 package org.swisspush.gateleen.expansion.myReImpl;
 
-import io.vertx.core.MultiMap;
+import io.reactivex.Observable;
+import io.reactivex.ObservableEmitter;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.functions.Consumer;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.swisspush.gateleen.core.http.RequestLoggerFactory;
-import org.swisspush.gateleen.core.util.ExpansionDeltaUtil;
 import org.swisspush.gateleen.core.util.ResponseStatusCodeLogUtil;
 import org.swisspush.gateleen.core.util.StatusCode;
 import org.swisspush.gateleen.expansion.ExpansionHandler;
-import org.swisspush.gateleen.expansion.myReImpl.ResourcetreePreOrderPublisher.LeaveNode;
-import org.swisspush.gateleen.expansion.myReImpl.ResourcetreePreOrderPublisher.Node;
 import org.swisspush.gateleen.routing.Rule;
 import org.swisspush.gateleen.routing.RuleFeaturesProvider;
 
-import java.util.ArrayList;
-import java.util.List;
+import javax.annotation.Nonnull;
+import java.util.*;
 
-import static org.swisspush.gateleen.core.util.ExpansionDeltaUtil.SlashHandling.END_WITH_SLASH;
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.EXPAND_ON_BACKEND;
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.STORAGE_EXPAND;
 import static org.swisspush.gateleen.routing.RuleProvider.RuleChangesObserver;
@@ -40,6 +36,7 @@ public class MyExpansionHandler implements RuleChangesObserver  {
     int maxExpansionLevelSoft = Integer.MAX_VALUE;
     /** A list of parameters, which are always removed from all requests. */
     List<String> parameter_to_remove_for_all_request;
+    private final Set<ObservableEmitter<ExpansionStats>> statsObservers = new HashSet<>();
 
     public MyExpansionHandler(Vertx vertx, HttpClient httpClient) {
         this.vertx = vertx;
@@ -50,6 +47,39 @@ public class MyExpansionHandler implements RuleChangesObserver  {
     public void rulesChanged(List<Rule> rules) {
         LOG.info("Update expandOnBackend and storageExpand information from changed routing rules");
         ruleFeaturesProvider = new RuleFeaturesProvider(rules);
+    }
+
+    public Disposable observeExpansionStats(@Nonnull Consumer<ExpansionStats> onNext) {
+        Objects.requireNonNull(onNext, "onNext");
+
+        // Intercept dispose calls so we're able to cleanup our observer list.
+        var interceptor = new Disposable() {
+            Disposable downstream;
+            ObservableEmitter<ExpansionStats> emitter;
+            @Override public void dispose() {
+                downstream.dispose();
+                statsObservers.remove(emitter);
+            }
+            @Override public boolean isDisposed() {
+                return downstream.isDisposed();
+            }
+        };
+
+        Observable<ExpansionStats> obs = Observable.create(e -> statsObservers.add(interceptor.emitter = e));
+        interceptor.downstream = obs.subscribe(onNext, this::onStatsFailed);
+        return interceptor;
+    }
+
+    private void onStatsFailed(Throwable thr) {
+        LOG.warn("Expansion statistics failed", thr);
+    }
+
+    void publishExpansionStats(ExpansionStats stats) {
+        vertx.setTimer(1, unused -> {
+            for (var observer : statsObservers) {
+                observer.onNext(stats);
+            }
+        });
     }
 
     public boolean isZipRequest(HttpServerRequest req) {
@@ -91,20 +121,22 @@ public class MyExpansionHandler implements RuleChangesObserver  {
         return ruleFeaturesProvider.isFeatureRequest(STORAGE_EXPAND, uri);
     }
 
-    Integer extractExpandParamValue(final HttpServerRequest request, final Logger log) {
+    /**
+     * @throws IllegalArgumentException
+     *      In case expand parameter seems invalid.
+     */
+    int extractExpandParamValue(final HttpServerRequest request, final Logger log) {
         String expandValue = request.params().get(EXPAND_PARAM);
         log.debug("Got expand parameter value " + expandValue);
 
         try {
             int value = Integer.parseInt(expandValue);
             if(value < 0){
-                log.warn("expand parameter value '{}' is not a positive number", expandValue);
-                return null;
+                throw new IllegalArgumentException("expand parameter value '" + expandValue + "' is not a positive number");
             }
             return value;
         } catch (NumberFormatException ex){
-            log.warn("expand parameter value '{}' is not a valid number", expandValue);
-            return null;
+            throw new IllegalArgumentException("expand parameter value '" + expandValue + "' is not a valid number", ex);
         }
     }
 
@@ -117,10 +149,34 @@ public class MyExpansionHandler implements RuleChangesObserver  {
     void respondBadRequest(final HttpServerRequest req, String body){
         ResponseStatusCodeLogUtil.info(req, StatusCode.BAD_REQUEST, ExpansionHandler.class);
         HttpServerResponse rsp = req.response();
-        rsp.setStatusCode(StatusCode.BAD_REQUEST.getStatusCode());
-        rsp.setStatusMessage(StatusCode.BAD_REQUEST.getStatusMessage());
-        rsp.end(body);
+        if (rsp.headWritten()) {
+            LOG.debug("Cannot send 'Bad Request': Header got already sent.");
+            rsp.close();
+        } else {
+            rsp.setStatusCode(StatusCode.BAD_REQUEST.getStatusCode());
+            rsp.setStatusMessage(StatusCode.BAD_REQUEST.getStatusMessage());
+            rsp.headers().set("Content-Type", "text/plain");
+            rsp.headers().set("Content-Length", String.valueOf(body.length() + 1));
+            rsp.write(body); /*TODO test*/
+            rsp.end("\n");
+        }
         req.resume();
+    }
+
+
+    /** IMMUTABLE DTO to publish statistics about expansion. */
+    public static class ExpansionStats {
+        private final String uri;
+        private final long durationMs;
+
+        public ExpansionStats(String uri, long durationMs) {
+            this.uri = uri;
+            this.durationMs = durationMs;
+        }
+
+        public String uri(){ return uri; }
+
+        public long durationMs() { return durationMs; }
     }
 
 }

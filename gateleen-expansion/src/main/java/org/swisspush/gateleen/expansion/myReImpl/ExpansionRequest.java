@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
 import org.swisspush.gateleen.core.util.ExpansionDeltaUtil;
 import org.swisspush.gateleen.expansion.ExpansionHandler;
+import org.swisspush.gateleen.expansion.myReImpl.MyExpansionHandler.ExpansionStats;
+import org.swisspush.gateleen.expansion.myReImpl.ResourcetreePreOrderPublisher.Node;
 
 import static org.swisspush.gateleen.core.util.ExpansionDeltaUtil.SlashHandling.END_WITHOUT_SLASH;
 
@@ -25,9 +27,9 @@ class ExpansionRequest {
     private final Logger requestLog;
     private final HttpServerRequest downstreamReq;
     private final HttpServerResponse downstreamRsp;
+    private int expandLevel;
     private Subscription subscription;
     private int previousLevel;
-    private int iChild;
 
     ExpansionRequest(Vertx vertx, HttpClient httpClient, MyExpansionHandler expansionHandler, HttpServerRequest downstreamReq) {
         this.vertx = vertx;
@@ -40,9 +42,10 @@ class ExpansionRequest {
     }
 
     void handleExpand() {
-        Integer expandLevel = expansionHandler.extractExpandParamValue(downstreamReq, requestLog);
-        if (expandLevel == null) {
-            expansionHandler.respondBadRequest(downstreamReq, "Expand parameter is not valid. Must be a positive number");
+        try {
+            expandLevel = expansionHandler.extractExpandParamValue(downstreamReq, requestLog);
+        } catch (IllegalArgumentException ex) {
+            expansionHandler.respondBadRequest(downstreamReq, ex.getMessage());
             return;
         }
         if (expandLevel > expansionHandler.maxExpansionLevelHard) {
@@ -63,6 +66,10 @@ class ExpansionRequest {
             return;
         }
 
+        // Somehow the old impl had the "interesting behavior" that level ONE means
+        // to publish TWO levels. So we adjust this to keep backward compatibility.
+        expandLevel += 1;
+
         downstreamReq.params().remove("expand");
         final String homeUri = constructSubUri(downstreamReq.path(), downstreamReq.params());
 
@@ -75,40 +82,83 @@ class ExpansionRequest {
         // Use chunked for downstream. Usually its not a good idea to collect
         // the whole subtree into memory beforehand.
         downstreamRsp.setChunked(true);
-        iChild = 0;
+        downstreamRsp.headers().set("Content-Type", "application/json");
         subscription.request(16);
     }
 
-    private void onNext(ResourcetreePreOrderPublisher.Node node) {
-        // TODO maxdepth produces corrupt JSON
+    private void onNext(Node node) {
         LOG.trace("onNext({}, {})", node.getClass().getSimpleName(), node.relPath());
         // We got one, so we order another one.
         subscription.request(1);
-        for (; node.level() < previousLevel; --previousLevel) {
-            // Close previous (deeper) collections if any.
-            downstreamRsp.write("}");
-        }
-        if (node.level() > previousLevel) {
-            if (node.childIdx() > 0) {
-                // Every except the 1st child need a comma as separator to the previous node.
+
+        // Prepare level and separators of our container JSON.
+        closeDeeperLevels(node.level());
+        if (levelHasIncreased(node)) {
+            if (is2ndOrLaterChild(node)) {
                 downstreamRsp.write(",");
             }
-            // Go down one level
-            downstreamRsp.write("{");
-        } else if (node.level() == previousLevel) {
-            // Add another child to the same node
+            openRecursionLevel(node);
+            // Now we're ready to append child after this condition.
+        } else if (isSameLevelAsPreviousNode(node)) {
+            // Just add plain separator so we can append next element after this condition.
             downstreamRsp.write(",");
         } else {
             assert(false); // MUST NOT reach this branch
         }
 
-        downstreamRsp.write("\"");
-        downstreamRsp.write(node.basename().replace("\"", "\\\""));
-        downstreamRsp.write("\":");
-        if (node.isDocument()) {
-            downstreamRsp.write(((ResourcetreePreOrderPublisher.LeaveNode) node).body());
+        // Append the effective child.
+        writeKeyAsString(node);
+        if (isNodeAllowedToWriteBody(node)) {
+            downstreamRsp.write(":");
+            downstreamRsp.write(((ResourcetreePreOrderPublisher.LeaveNode) node).bodyAsBuffer());
         }
         previousLevel = node.level();
+    }
+
+    private boolean isNodeAllowedToWriteBody(Node node) { return node.level() < expandLevel && node.isDocument(); }
+
+    private boolean is2ndOrLaterChild(Node node) { return node.childIdx() > 0; }
+
+    private boolean levelHasIncreased(Node node) { return node.level() > previousLevel; }
+
+    private boolean isRootLevel(Node node) { return node.level() == 1; }
+
+    private boolean isSameLevelAsPreviousNode(Node node) { return node.level() == previousLevel; }
+
+    private boolean isMaxExpandLevelExceeded(int level) { return level > expandLevel; }
+
+    private void closeDeeperLevels(int newLevel) {
+        for (; newLevel < previousLevel; --previousLevel) {
+            // Close previous (deeper) collections if any.
+            if (isMaxExpandLevelExceeded(previousLevel)) {
+                // In case of cut-off levels due to expand=X limit, innermost level is an
+                // array instead an object.
+                downstreamRsp.write("]");
+            }else{
+                downstreamRsp.write("}");
+            }
+        }
+    }
+
+    private void openRecursionLevel(Node node) {
+        if(isRootLevel(node)) {
+            // No prefix wanted on root level.
+        }else{
+            downstreamRsp.write(":");
+        }
+        if(isMaxExpandLevelExceeded(node.level())){
+            // In case level gets cut due to expand=X limit, the innermost level is no
+            // longer an object but an array containing keys only.
+            downstreamRsp.write("[");
+        }else{
+            downstreamRsp.write("{");
+        }
+    }
+
+    private void writeKeyAsString(Node node) {
+        downstreamRsp.write("\"");
+        downstreamRsp.write(node.basename().replace("\"", "\\\""));
+        downstreamRsp.write("\"");
     }
 
     private void onError(Throwable thr) {
@@ -123,17 +173,11 @@ class ExpansionRequest {
     }
 
     private void onComplete() {
-        while (previousLevel-- > 0) {
-            // Finalize the not yet closed levels.
-            downstreamRsp.write("}");
-        }
+        closeDeeperLevels(0);
         downstreamRsp.end();
         long durationMs = System.currentTimeMillis() - startMs;
-        if (durationMs > 30_000) {
-            LOG.info("Expand took {}ms: {}", durationMs, downstreamReq.uri());
-        } else {
-            LOG.debug("Expand took {}ms: {}", durationMs, downstreamReq.uri());
-        }
+        ExpansionStats stats = new ExpansionStats(downstreamReq.uri(), durationMs);
+        expansionHandler.publishExpansionStats(stats);
     }
 
     private String constructSubUri(String path, MultiMap params) {
