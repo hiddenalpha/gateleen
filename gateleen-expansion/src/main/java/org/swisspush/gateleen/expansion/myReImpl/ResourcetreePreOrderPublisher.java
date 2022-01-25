@@ -39,7 +39,6 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
     private static final String SELF_REQUEST_HEADER = "x-self-request";
     private static final Pattern PAT_URI = Pattern.compile("^(?<url>[^?]+)(?:\\?(?<query>[^?]*))?$");
     private static final Logger LOG = LoggerFactory.getLogger(ResourcetreePreOrderPublisher.class);
-    private final Queue<Runnable> tasks;
     private final HttpClient httpClient;
     /* Without trailing slash */
     private final String url;
@@ -57,7 +56,6 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
      *      Maximum depth to iterate into the tree.
      */
     public ResourcetreePreOrderPublisher(Vertx vertx, HttpClient httpClient, String uri, MultiMap headers, int maxdepth) {
-        this.tasks = new ArrayDeque<>();
         this.httpClient = httpClient;
         Matcher m = PAT_URI.matcher(uri);
         if (!m.matches()) {
@@ -125,6 +123,10 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         }
 
         private void start() {
+            if (cancelRequest) {
+                LOG.warn("Won't start due to cancellation");
+                return;
+            }
             disposable = new RecursionLevel(url, headers).asFlowable()
                     // I did like to use: flowable.subscribe(subscriber)
                     // But then it throws like "Can only subscribe once" exception. Using this
@@ -168,11 +170,8 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
         }
 
         private Flowable<Node> asFlowable() {
-            // Due to using an unbound buffer here, there is no real backpressure. Implementing
-            // real backpressure would require to write more code. But theory says we MUST NOT
-            // write more code if shorter code can do it.
-            // If we like to implement REAL backpressure, please open an issue to request its
-            // implementation.
+            // Due to using an unbound buffer here, there is no real backpressure. If
+            // we like to implement REAL backpressure we could not use 'Flowable.create'.
             return Flowable.create(this::onEmitter, BackpressureStrategy.BUFFER);
         }
 
@@ -184,7 +183,6 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             }
             // Setup emitter
             this.emitter = emitter;
-//            emitter.setCancellable(this::onCancel); // TODO why does this call the callback immediately?
             // Initiate request.
             req = httpClient.request(GET, url +'?'+ query, this::onResponse);
             req.exceptionHandler(emitter::onError);
@@ -240,7 +238,7 @@ public class ResourcetreePreOrderPublisher extends Flowable<Node> {
             }
             childNames = ((JsonArray) valueObj).getList();
             if (it.hasNext()) {
-                childNames = null; // GC
+                childNames = null;
                 LOG.trace("Too many entries. Assume document: {}", url);
                 publishDocumentResource(url, thisIdx, bodyBuf, bodyJson);
                 emitter.onComplete();
