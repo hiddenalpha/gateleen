@@ -230,7 +230,7 @@ public class Forwarder extends AbstractForwarder {
                 req.resume();
 
                 if (event.failed()) {
-                    log.warn("Problem to request {}: {}", targetUri, event.cause());
+                    log.warn("Problem to request {}: {}", targetUri, event.cause()); /* TODO arg 'event.cause()' serializes to '{}' */
                     final HttpServerResponse response = req.response();
                     response.setStatusCode(StatusCode.SERVICE_UNAVAILABLE.getStatusCode());
                     response.setStatusMessage(StatusCode.SERVICE_UNAVAILABLE.getStatusMessage());
