@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.swisspush.gateleen.core.util.StatusCode.INTERNAL_SERVER_ERROR;
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.EXPAND_ON_BACKEND;
 import static org.swisspush.gateleen.routing.RuleFeatures.Feature.STORAGE_EXPAND;
 import static org.swisspush.gateleen.routing.RuleProvider.RuleChangesObserver;
@@ -491,7 +492,9 @@ public class ExpansionHandler implements RuleChangesObserver {
 
     private void makeStorageExpandRequest(final String targetUri, final List subResourceNames, final HttpServerRequest req, final DeltaHandler<ResourceNode> handler) {
         Logger log = RequestLoggerFactory.getLogger(ExpansionHandler.class, req);
-        httpClient.request(HttpMethod.POST, targetUri + "?storageExpand=true").onComplete(asyncResult -> {
+        HttpMethod reqMethod = HttpMethod.POST;
+        String reqUri = targetUri + "?storageExpand=true";
+        httpClient.request(reqMethod, reqUri).onComplete(asyncResult -> {
             if (asyncResult.failed()) {
                 log.warn("Failed request to {}: {}", targetUri + "?storageExpand=true", asyncResult.cause());
                 return;
@@ -512,6 +515,12 @@ public class ExpansionHandler implements RuleChangesObserver {
             cReq.write(payload);
 
             cReq.send(event -> {
+                if (event.failed()) {
+                    Throwable ex = event.cause();
+                    log.debug("{} {}", reqMethod, reqUri, ex);
+                    var exWrappr = new ResourceCollectionException(ex.getMessage(), INTERNAL_SERVER_ERROR);
+                    handler.handle(new ResourceNode(SERIOUS_EXCEPTION, exWrappr));
+                }
                 HttpClientResponse cRes = event.result();
                 cRes.bodyHandler(data -> {
                     if (StatusCode.NOT_FOUND.getStatusCode() == cRes.statusCode()) {
