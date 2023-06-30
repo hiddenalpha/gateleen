@@ -47,6 +47,8 @@ import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static io.vertx.core.http.HttpMethod.DELETE;
+import static io.vertx.core.http.HttpMethod.PUT;
 import static org.swisspush.gateleen.core.util.HttpRequestHeader.CONTENT_LENGTH;
 
 /**
@@ -503,7 +505,7 @@ public class HookHandler implements LoggableResource {
          * 1) Un- / Register Listener / Routes
          */
         var requestMethod = request.method();
-        if (requestMethod == HttpMethod.PUT) {
+        if (requestMethod == PUT) {
             var requestUri = request.uri();
             if (requestUri.contains(HOOKS_LISTENERS_URI_PART)) {
                 handleListenerRegistration(request);
@@ -514,7 +516,7 @@ public class HookHandler implements LoggableResource {
                 return true;
             }
         }
-        if (requestMethod == HttpMethod.DELETE) {
+        if (requestMethod == DELETE) {
             var requestUri = request.uri();
             if (requestUri.contains(HOOKS_LISTENERS_URI_PART)) {
                 handleListenerUnregistration(request);
