@@ -527,8 +527,9 @@ public class ExpansionHandler implements RuleChangesObserver {
                         log.debug("NotFound: {}", targetUri);
                         handler.handle(new ResourceNode(SERIOUS_EXCEPTION, new ResourceCollectionException(cRes.statusMessage(), StatusCode.NOT_FOUND)));
                     } else if (StatusCode.INTERNAL_SERVER_ERROR.getStatusCode() == cRes.statusCode()) {
-                        log.error("error in request resource : {} message : {}", targetUri, data.toString());
-                        handler.handle(new ResourceNode(SERIOUS_EXCEPTION, new ResourceCollectionException(data.toString(), StatusCode.INTERNAL_SERVER_ERROR)));
+                        String fullResponseBody = data.toString();
+                        log.error("{}: {}: {}", INTERNAL_SERVER_ERROR, targetUri, fullResponseBody);
+                        handler.handle(new ResourceNode(SERIOUS_EXCEPTION, new ResourceCollectionException(fullResponseBody, StatusCode.INTERNAL_SERVER_ERROR)));
                     } else if (StatusCode.METHOD_NOT_ALLOWED.getStatusCode() == cRes.statusCode()) {
                         log.error("storageExpand not allowed for: {}", targetUri);
                         handler.handle(new ResourceNode(SERIOUS_EXCEPTION, new ResourceCollectionException(cRes.statusMessage(), StatusCode.METHOD_NOT_ALLOWED)));
