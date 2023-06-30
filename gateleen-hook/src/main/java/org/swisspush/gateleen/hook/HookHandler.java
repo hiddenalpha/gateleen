@@ -47,6 +47,8 @@ import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static io.vertx.core.http.HttpMethod.DELETE;
+import static io.vertx.core.http.HttpMethod.PUT;
 import static org.swisspush.gateleen.core.util.HttpRequestHeader.CONTENT_LENGTH;
 
 /**
