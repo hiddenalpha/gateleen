@@ -5,6 +5,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.http.*;
+import org.swisspush.gateleen.core.event.SucceededAsyncResult;
 
 import java.util.List;
 import java.util.function.Function;
@@ -90,7 +91,7 @@ public abstract class AbstractHttpClient implements HttpClient {
 
     @Override
     public void request(HttpMethod method, String requestURI, Handler<AsyncResult<HttpClientRequest>> handler) {
-        throw new UnsupportedOperationException();
+        handler.handle(new SucceededAsyncResult<>(doRequest(method, requestURI)));
     }
 
     @Override
