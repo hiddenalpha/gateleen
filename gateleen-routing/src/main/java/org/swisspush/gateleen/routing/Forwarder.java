@@ -30,6 +30,8 @@ import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
+import static org.swisspush.gateleen.core.util.HttpHeaderUtil.removeNonForwardHeaders;
+
 /**
  * Forwards requests to the backend.
  *
@@ -250,7 +252,7 @@ public class Forwarder extends AbstractForwarder {
 
                 // per https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.10
                 MultiMap headersToForward = req.headers();
-                headersToForward = HttpHeaderUtil.removeNonForwardHeaders(headersToForward);
+                headersToForward = removeNonForwardHeaders(headersToForward, req.absoluteURI());
                 HttpHeaderUtil.mergeHeaders(cReq.headers(), headersToForward, targetUri);
                 if (!ResponseStatusCodeLogUtil.isRequestToExternalTarget(target)) {
                     cReq.headers().set(SELF_REQUEST_HEADER, "true");
@@ -460,7 +462,7 @@ public class Forwarder extends AbstractForwarder {
 
             // Add received headers to original request but remove headers that should not get forwarded.
             MultiMap headersToForward = cRes.headers();
-            headersToForward = HttpHeaderUtil.removeNonForwardHeaders(headersToForward);
+            headersToForward = removeNonForwardHeaders(headersToForward, cRes.request().absoluteURI());
             HttpHeaderUtil.mergeHeaders(req.response().headers(), headersToForward, targetUri);
             if (profileHeaderMap != null && !profileHeaderMap.isEmpty()) {
                 HttpHeaderUtil.mergeHeaders(req.response().headers(), MultiMap.caseInsensitiveMultiMap().addAll(profileHeaderMap), targetUri);
@@ -482,8 +484,8 @@ public class Forwarder extends AbstractForwarder {
                         afterHandler.handle(null);
                     }
                     ResponseStatusCodeLogUtil.debug(req, StatusCode.fromCode(req.response().getStatusCode()), Forwarder.class);
-                } catch (IllegalStateException e) {
-                    // ignore because maybe already closed
+                } catch (IllegalStateException ex) {
+                    LOG.debug("ignore exception because maybe already closed", ex);
                 }
                 vertx.runOnContext(event -> loggingHandler.log());
             });

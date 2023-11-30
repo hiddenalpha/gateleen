@@ -31,7 +31,7 @@ public class HttpHeaderUtilTest {
         headers.add("three", "other stuff");
 
         // Apply filter
-        headers = HttpHeaderUtil.removeNonForwardHeaders(headers);
+        headers = HttpHeaderUtil.removeNonForwardHeaders(headers, "/used/for/error/reporting/only");
 
         // Assert unrelated still exists
         testContext.assertTrue(headers.contains("an-unrelated-one"));

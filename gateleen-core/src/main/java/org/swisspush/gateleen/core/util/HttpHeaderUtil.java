@@ -24,15 +24,36 @@ public class HttpHeaderUtil {
      *
      * @param headers The headers to check.
      * @see <a href="https://tools.ietf.org/html/rfc2616#section-14.10">RFC 2616 section 14.10</a>
+     * @see <a href="https://www.rfc-editor.org/rfc/rfc9110#name-connection">Connection header in RFC 9110</a>
      */
-    public static <T extends MultiMap> T removeNonForwardHeaders(T headers) {
+    public static <T extends MultiMap> T removeNonForwardHeaders(T headers, String logHint) {
         final String CONNECTION = HttpRequestHeader.CONNECTION.getName();
+        final String KEEP_ALIVE = HttpRequestHeader.KEEP_ALIVE.getName();
+        final String TRANSFER_ENCODING = HttpRequestHeader.TRANSFER_ENCODING.getName();
 
         // Remove all headers named by connection-token.
         headers.getAll(CONNECTION).forEach(headers::remove);
 
         // Remove the connection headers itself.
         headers.remove(CONNECTION);
+
+        // Cited from "https://www.rfc-editor.org/rfc/rfc9110#name-connection":
+        //     ... When a field aside from Connection is used to supply control information for or
+        //     about the current connection, the sender MUST list the corresponding field name within
+        //     the Connection header field ...
+        //     ... intermediaries SHOULD remove or replace fields that are known to require removal
+        //     before forwarding, whether or not they appear as a connection-option ...
+        //     ... a connection-specific field received without a corresponding connection option
+        //     usually indicates that the field has been improperly forwarded by an intermediary and
+        //     ought to be ignored by the recipient ...
+        if( headers.contains(KEEP_ALIVE) ){
+            LOG.info("Ignore '{}' because not listed in '{}' of: {}", KEEP_ALIVE, CONNECTION, logHint);
+            headers.remove(KEEP_ALIVE);
+        }
+        if( headers.contains(TRANSFER_ENCODING) ){
+            LOG.info("Ignore '{}' because not listed in '{}' of: {}", TRANSFER_ENCODING, CONNECTION, logHint);
+            headers.remove(TRANSFER_ENCODING);
+        }
 
         return headers;
     }
@@ -92,7 +113,7 @@ public class HttpHeaderUtil {
                 String destinationValue = destination.get(sourceHeader.getKey());
                 String sourceValue = source.get(sourceHeader.getKey());
                 if (!destinationValue.equals(sourceValue)) {
-                    LOG.error("{}} values do not match {} != {} for request {}",
+                    LOG.warn("'{}' values do not match ({} != {}) for {}",
                             sourceHeader.getKey(), destinationValue, sourceValue, context);
                 }
                 // remove it from the destination

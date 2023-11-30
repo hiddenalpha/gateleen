@@ -9,6 +9,8 @@ import io.vertx.core.MultiMap;
  */
 public enum HttpRequestHeader {
     CONNECTION("connection"),
+    KEEP_ALIVE("Keep-Alive"),
+    TRANSFER_ENCODING("Transfer-Encoding"),
     CONTENT_LENGTH("Content-Length"),
     X_HOPS("x-hops");
 
