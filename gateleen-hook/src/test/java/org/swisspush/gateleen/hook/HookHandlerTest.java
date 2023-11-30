@@ -9,6 +9,7 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
+import io.vertx.ext.web.RoutingContext;
 import org.joda.time.DateTime;
 import org.junit.Before;
 import org.junit.Test;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.http.*;
 import org.swisspush.gateleen.core.storage.MockResourceStorage;
 import org.swisspush.gateleen.hook.reducedpropagation.ReducedPropagationManager;
+import org.swisspush.gateleen.logging.LogAppenderRepository;
 import org.swisspush.gateleen.logging.LoggingResourceManager;
 import org.swisspush.gateleen.monitoring.MonitoringHandler;
 import org.swisspush.gateleen.queue.expiry.ExpiryCheckHandler;
@@ -48,26 +50,31 @@ public class HookHandlerTest {
     private HttpClient httpClient;
     private MockResourceStorage storage;
     private LoggingResourceManager loggingResourceManager;
+    private LogAppenderRepository logAppenderRepository;
     private MonitoringHandler monitoringHandler;
     private RequestQueue requestQueue;
     private ReducedPropagationManager reducedPropagationManager;
 
     private HookHandler hookHandler;
 
+    private RoutingContext routingContext;
+
 
     @Before
     public void setUp() {
         vertx = Vertx.vertx();
+        routingContext = Mockito.mock(RoutingContext.class);
         httpClient = Mockito.mock(HttpClient.class);
         Mockito.when(httpClient.request(any(HttpMethod.class), anyString())).thenReturn(Mockito.mock(Future.class));
         storage = new MockResourceStorage();
         loggingResourceManager = Mockito.mock(LoggingResourceManager.class);
+        logAppenderRepository = Mockito.mock(LogAppenderRepository.class);
         monitoringHandler = Mockito.mock(MonitoringHandler.class);
         requestQueue = Mockito.mock(RequestQueue.class);
         reducedPropagationManager = Mockito.mock(ReducedPropagationManager.class);
 
 
-        hookHandler = new HookHandler(vertx, httpClient, storage, loggingResourceManager, monitoringHandler,
+        hookHandler = new HookHandler(vertx, httpClient, storage, loggingResourceManager, logAppenderRepository, monitoringHandler,
                 "userProfilePath", HOOK_ROOT_URI, requestQueue, false, reducedPropagationManager);
         hookHandler.init();
     }
@@ -119,7 +126,10 @@ public class HookHandlerTest {
         String originalPayload = "{\"key\":123}";
         PUTRequest putRequest = new PUTRequest(uri, originalPayload);
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
-        hookHandler.handle(putRequest);
+
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+
+        hookHandler.handle(routingContext);
 
         // verify that enqueue has been called WITH the payload
         Mockito.verify(requestQueue, Mockito.timeout(2000).times(1)).enqueue(Mockito.argThat(new ArgumentMatcher<>() {
@@ -147,7 +157,9 @@ public class HookHandlerTest {
         String originalPayload = "{\"key\":123}";
         PUTRequest putRequest = new PUTRequest(uri, originalPayload);
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
-        hookHandler.handle(putRequest);
+
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+        hookHandler.handle(routingContext);
 
         // verify that enqueue has been called WITH the payload
         Mockito.verify(requestQueue, Mockito.timeout(2000).times(1)).enqueue(Mockito.argThat(new ArgumentMatcher<>() {
@@ -175,7 +187,8 @@ public class HookHandlerTest {
         String originalPayload = "{\"key\":123}";
         PUTRequest putRequest = new PUTRequest(uri, originalPayload);
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
-        hookHandler.handle(putRequest);
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+        hookHandler.handle(routingContext);
 
         // verify that enqueue has been called WITHOUT the payload but with 'Content-Length : 0' header
         Mockito.verify(requestQueue, Mockito.timeout(2000).times(1)).enqueue(Mockito.argThat(new ArgumentMatcher<>() {
@@ -190,7 +203,8 @@ public class HookHandlerTest {
         }), anyString(), any(Handler.class));
 
         PUTRequest putRequestWithoutContentLengthHeader = new PUTRequest(uri, originalPayload);
-        hookHandler.handle(putRequestWithoutContentLengthHeader);
+        Mockito.when(routingContext.request()).thenReturn(putRequestWithoutContentLengthHeader);
+        hookHandler.handle(routingContext);
 
         // verify that enqueue has been called WITHOUT the payload and WITHOUT 'Content-Length' header
         Mockito.verify(requestQueue, Mockito.timeout(2000).times(1)).enqueue(Mockito.argThat(new ArgumentMatcher<>() {
@@ -207,7 +221,7 @@ public class HookHandlerTest {
 
     @Test
     public void testListenerEnqueueWithReducedPropagationQueueingStrategyButNoManager(TestContext context) throws InterruptedException {
-        hookHandler = new HookHandler(vertx, httpClient, storage, loggingResourceManager, monitoringHandler,
+        hookHandler = new HookHandler(vertx, httpClient, storage, loggingResourceManager, logAppenderRepository, monitoringHandler,
                 "userProfilePath", HOOK_ROOT_URI, requestQueue, false, null);
         hookHandler.init();
 
@@ -222,7 +236,8 @@ public class HookHandlerTest {
         String originalPayload = "{\"key\":123}";
         PUTRequest putRequest = new PUTRequest(uri, originalPayload);
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
-        hookHandler.handle(putRequest);
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+        hookHandler.handle(routingContext);
 
         // verify that no enqueue (or lockedEnqueue) has been called because no ReducedPropagationManager was configured
         Mockito.verifyZeroInteractions(requestQueue);
@@ -246,7 +261,9 @@ public class HookHandlerTest {
         String originalPayload = "{\"key\":123}";
         PUTRequest putRequest = new PUTRequest(uri, originalPayload);
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
-        hookHandler.handle(putRequest);
+
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+        hookHandler.handle(routingContext);
 
         String targetUri = "/playground/server/push/v1/devices/" + deviceId + "/playground/server/tests/hooktest/abc123";
         Mockito.verify(reducedPropagationManager, Mockito.timeout(2000).times(1))
@@ -266,7 +283,9 @@ public class HookHandlerTest {
         String originalPayload = "{\"key\":123}";
         PUTRequest putRequest = new PUTRequest(uri, originalPayload);
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
-        hookHandler.handle(putRequest);
+
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+        hookHandler.handle(routingContext);
 
         // verify that enqueue has been called WITH the payload
         Mockito.verify(requestQueue, Mockito.timeout(2000).times(1)).enqueue(Mockito.argThat(new ArgumentMatcher<>() {
@@ -295,7 +314,9 @@ public class HookHandlerTest {
         PUTRequest putRequest = new PUTRequest(uri, originalPayload);
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
         putRequest.addHeader("x-foo", "A");
-        hookHandler.handle(putRequest);
+
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+        hookHandler.handle(routingContext);
 
         // verify that enqueue has been called WITH the payload
         Mockito.verify(requestQueue, Mockito.timeout(2000).times(1)).enqueue(Mockito.argThat(new ArgumentMatcher<>() {
@@ -323,8 +344,8 @@ public class HookHandlerTest {
         String originalPayload = "{\"key\":123}";
         PUTRequest putRequest = new PUTRequest(uri, originalPayload);
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
-        putRequest.addHeader("x-foo", "X"); // the request header x-foo: X should not trigger the listener
-        hookHandler.handle(putRequest);
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+        hookHandler.handle(routingContext);
 
         // verify that no enqueue has been called since the header did not match
         Mockito.verifyZeroInteractions(requestQueue);
@@ -366,7 +387,8 @@ public class HookHandlerTest {
         }
 
         // Trigger work
-        hookHandler.handle(request);
+        Mockito.when(routingContext.request()).thenReturn(request);
+        hookHandler.handle(routingContext);
 
         // Assert request was ok
         testContext.assertEquals(200, statusCodePtr[0]);
@@ -401,7 +423,8 @@ public class HookHandlerTest {
         }
 
         // Trigger work
-        hookHandler.handle(request);
+        Mockito.when(routingContext.request()).thenReturn(request);
+        hookHandler.handle(routingContext);
 
         // Assert request was ok
         testContext.assertEquals(200, statusCodePtr[0]);
@@ -435,7 +458,8 @@ public class HookHandlerTest {
         }
 
         // Trigger work
-        hookHandler.handle(request);
+        Mockito.when(routingContext.request()).thenReturn(request);
+        hookHandler.handle(routingContext);
 
         // Assert request was ok
         testContext.assertEquals(200, statusCodePtr[0]);
@@ -465,7 +489,8 @@ public class HookHandlerTest {
         }
 
         // Trigger work
-        hookHandler.handle(request);
+        Mockito.when(routingContext.request()).thenReturn(request);
+        hookHandler.handle(routingContext);
 
         // Assert request was ok
         testContext.assertEquals(200, statusCodePtr[0]);
@@ -495,7 +520,8 @@ public class HookHandlerTest {
         }
 
         // Trigger work
-        hookHandler.handle(request);
+        Mockito.when(routingContext.request()).thenReturn(request);
+        hookHandler.handle(routingContext);
 
         // Assert request was ok
         testContext.assertEquals(200, statusCodePtr[0]);
@@ -528,7 +554,8 @@ public class HookHandlerTest {
         }
 
         // Trigger
-        hookHandler.handle(request);
+        Mockito.when(routingContext.request()).thenReturn(request);
+        hookHandler.handle(routingContext);
 
         { // Assert request got accepted.
             testContext.assertEquals(200, statusCodePtr[0]);
@@ -563,7 +590,8 @@ public class HookHandlerTest {
             }
 
             // Trigger
-            hookHandler.handle(request);
+            Mockito.when(routingContext.request()).thenReturn(request);
+            hookHandler.handle(routingContext);
 
             { // Assert request got rejected.
                 testContext.assertEquals(400, statusCodePtr[0]);
@@ -653,7 +681,10 @@ public class HookHandlerTest {
             }
         };
         putRequest.addHeader(CONTENT_LENGTH.getName(), "99");
-        hookHandler.handle(putRequest);
+
+        Mockito.when(routingContext.request()).thenReturn(putRequest);
+        hookHandler.handle(routingContext);
+
         latch.await();
         assertEquals(400, response.getStatusCode());
     }
@@ -825,7 +856,7 @@ public class HookHandlerTest {
         return buffer;
     }
 
-    class PUTRequest extends DummyHttpServerRequest {
+    static class PUTRequest extends DummyHttpServerRequest {
         MultiMap headers = MultiMap.caseInsensitiveMultiMap();
 
         private String uri;

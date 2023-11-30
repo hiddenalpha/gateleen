@@ -9,8 +9,10 @@ import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.configuration.ConfigurationResourceManager;
 import org.swisspush.gateleen.core.http.HttpClientFactory;
 import org.swisspush.gateleen.core.storage.ResourceStorage;
+import org.swisspush.gateleen.logging.LogAppenderRepository;
 import org.swisspush.gateleen.logging.LoggingResourceManager;
 import org.swisspush.gateleen.monitoring.MonitoringHandler;
+import org.swisspush.gateleen.routing.auth.OAuthProvider;
 
 import java.util.*;
 
@@ -32,6 +34,7 @@ public class RouterBuilder {
     private ResourceStorage storage;
     private Map<String, Object> properties;
     private LoggingResourceManager loggingResourceManager;
+    private LogAppenderRepository logAppenderRepository;
     private MonitoringHandler monitoringHandler;
     private HttpClient selfClient;
     private String serverPath;
@@ -47,6 +50,8 @@ public class RouterBuilder {
     private ArrayList<Handler<Void>> doneHandlers;
     private HttpClientFactory httpClientFactory;
     private int routeMultiplier = Router.DEFAULT_ROUTER_MULTIPLIER;
+
+    private OAuthProvider oAuthProvider;
 
     RouterBuilder() {
         // PackagePrivate, as clients should use "Router.builder()" and not this class here directly.
@@ -85,6 +90,7 @@ public class RouterBuilder {
                 storage,
                 properties,
                 loggingResourceManager,
+                logAppenderRepository,
                 monitoringHandler,
                 selfClient,
                 serverPath,
@@ -95,6 +101,7 @@ public class RouterBuilder {
                 defaultRouteTypes,
                 httpClientFactory,
                 routeMultiplier,
+                oAuthProvider,
                 doneHandlersArray
         );
         if (resourceLoggingEnabled) {
@@ -154,6 +161,12 @@ public class RouterBuilder {
     public RouterBuilder withLoggingResourceManager(LoggingResourceManager loggingResourceManager) {
         ensureNotBuilt();
         this.loggingResourceManager = loggingResourceManager;
+        return this;
+    }
+
+    public RouterBuilder withLogAppenderRepository(LogAppenderRepository logAppenderRepository) {
+        ensureNotBuilt();
+        this.logAppenderRepository = logAppenderRepository;
         return this;
     }
 
@@ -231,6 +244,12 @@ public class RouterBuilder {
     public RouterBuilder withHttpClientFactory(HttpClientFactory httpClientFactory) {
         ensureNotBuilt();
         this.httpClientFactory = httpClientFactory;
+        return this;
+    }
+
+    public RouterBuilder withOAuthProvider(OAuthProvider oAuthProvider) {
+        ensureNotBuilt();
+        this.oAuthProvider = oAuthProvider;
         return this;
     }
 

@@ -1,7 +1,7 @@
 # [\_] Gateleen
 
 [![Build Status](https://travis-ci.com/swisspush/gateleen.svg?branch=master)](https://travis-ci.com/swisspush/gateleen)
-[![codecov](https://codecov.io/gh/swisspush/gateleen/branch/master/graph/badge.svg)](https://codecov.io/gh/swisspush/gateleen)
+[![codecov](https://codecov.io/gh/swisspost/gateleen/branch/master/graph/badge.svg?token=tBKO08u1C8)](https://codecov.io/gh/swisspost/gateleen)
 [![](https://img.shields.io/github/issues-raw/swisspush/gateleen.svg)](https://github.com/swisspush/gateleen/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20)
 [![GitHub contributors](https://img.shields.io/github/contributors/swisspush/gateleen.svg)](https://github.com/swisspush/gateleen/graphs/contributors)
 
@@ -144,7 +144,7 @@ This is a list of the custom headers used by Gateleen.
 ## Performance Tuning
 * The amount of max open files per process should be at least 16384. You can check your max open files per process with this command `cat /proc/<process id>/limits`.
 * The amount of open files depends on the amount of open Http Requests, which are holding a tcp connection which are holding a file handle.
-* The important number to control the open Http Requests is the pool size of the Http Client. The higher the pool size the higher the open files.
+* The important number to control the open HTTP requests is the pool size of the Http Client. The higher the pool size the higher the open files.
 
 ## Dependencies
 * [vertx-rest-storage](https://github.com/swisspush/vertx-rest-storage) at least release [v2.0.2](https://github.com/swisspush/vertx-rest-storage/releases/tag/v2.0.2)

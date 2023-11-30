@@ -2,7 +2,6 @@ package org.swisspush.gateleen.routing;
 
 import io.netty.channel.ConnectTimeoutException;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.vertx.codegen.annotations.Nullable;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
@@ -19,14 +18,18 @@ import org.swisspush.gateleen.core.util.HttpHeaderUtil;
 import org.swisspush.gateleen.core.util.ResponseStatusCodeLogUtil;
 import org.swisspush.gateleen.core.util.StatusCode;
 import org.swisspush.gateleen.core.util.StringUtils;
+import org.swisspush.gateleen.logging.LogAppenderRepository;
 import org.swisspush.gateleen.logging.LoggingHandler;
 import org.swisspush.gateleen.logging.LoggingResourceManager;
 import org.swisspush.gateleen.logging.LoggingWriteStream;
 import org.swisspush.gateleen.monitoring.MonitoringHandler;
+import org.swisspush.gateleen.routing.auth.AuthHeader;
+import org.swisspush.gateleen.routing.auth.AuthStrategy;
 
-import java.util.Base64;
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
@@ -45,10 +48,12 @@ public class Forwarder extends AbstractForwarder {
     private String target;
     private int port;
     private Rule rule;
-    private String base64UsernamePassword;
     private LoggingResourceManager loggingResourceManager;
+    private LogAppenderRepository logAppenderRepository;
     private MonitoringHandler monitoringHandler;
     private ResourceStorage storage;
+    @Nullable
+    private AuthStrategy authStrategy;
     private Vertx vertx;
 
     private static final String ON_BEHALF_OF_HEADER = "x-on-behalf-of";
@@ -63,22 +68,20 @@ public class Forwarder extends AbstractForwarder {
     private static final Logger LOG = LoggerFactory.getLogger(Forwarder.class);
 
     public Forwarder(Vertx vertx, HttpClient client, Rule rule, final ResourceStorage storage,
-                     LoggingResourceManager loggingResourceManager, MonitoringHandler monitoringHandler,
-                     String userProfilePath) {
-        super(rule, loggingResourceManager, monitoringHandler);
+                     LoggingResourceManager loggingResourceManager, LogAppenderRepository logAppenderRepository, MonitoringHandler monitoringHandler,
+                     String userProfilePath, @Nullable AuthStrategy authStrategy) {
+        super(rule, loggingResourceManager, logAppenderRepository, monitoringHandler);
         this.vertx = vertx;
         this.client = client;
         this.rule = rule;
         this.loggingResourceManager = loggingResourceManager;
+        this.logAppenderRepository = logAppenderRepository;
         this.monitoringHandler = monitoringHandler;
         this.storage = storage;
         this.urlPattern = Pattern.compile(rule.getUrlPattern());
         this.target = rule.getHost() + ":" + rule.getPort();
         this.userProfilePath = userProfilePath;
-        if (rule.getUsername() != null && !rule.getUsername().isEmpty()) {
-            String password = rule.getPassword() == null ? null : rule.getPassword().trim();
-            base64UsernamePassword = Base64.getEncoder().encodeToString((rule.getUsername().trim() + ":" + password).getBytes());
-        }
+        this.authStrategy = authStrategy;
     }
 
     private Map<String, String> createProfileHeaderValues(JsonObject profile, Logger log) {
@@ -106,23 +109,25 @@ public class Forwarder extends AbstractForwarder {
 
     @Override
     public void handle(final RoutingContext ctx) {
-        handle(ctx.request(), null, null);
+        handle(ctx, null, null);
     }
 
     /**
      * Allows to handle a request which was already consumed.
      * If the parameter <code>bodyData</code> is not null, the
-     * request was consumed and you can't read the body of the
+     * request was consumed, and you can't read the body of the
      * request again.
      *
-     * @param req      - the original request
+     * @param ctx      - the original request context
      * @param bodyData - a buffer with the body data, null if the request
      *                 was not yet consumed
      */
-    public void handle(final HttpServerRequest req, final Buffer bodyData, @Nullable final Handler<Void> afterHandler) {
+    public void handle(final RoutingContext ctx, final Buffer bodyData, @Nullable final Handler<Void> afterHandler) {
+        HttpServerRequest req = ctx.request();
         final Logger log = RequestLoggerFactory.getLogger(Forwarder.class, req);
 
-        if (handleHeadersFilter(req)) {
+        if (rule.hasHeadersFilterPattern() && !doHeadersFilterMatch(ctx.request())) {
+            ctx.next();
             return;
         }
 
@@ -151,24 +156,34 @@ public class Forwarder extends AbstractForwarder {
         log.debug("Forwarding request: {} to {}://{} with rule {}", req.uri(), rule.getScheme(), target + targetUri, rule.getRuleIdentifier());
         final String userId = extractUserId(req, log);
         req.pause(); // pause the request to avoid problems with starting another async request (storage)
-        if (userId != null && rule.getProfile() != null && userProfilePath != null) {
-            log.debug("Get profile information for user '{}' to append to headers", userId);
-            String userProfileKey = String.format(userProfilePath, userId);
-            storage.get(userProfileKey, buffer -> {
-                Map<String, String> profileHeaderMap = new HashMap<>();
-                if (buffer != null) {
-                    JsonObject profile = new JsonObject(buffer.toString());
-                    profileHeaderMap = createProfileHeaderValues(profile, log);
-                    log.debug("Got profile information of user '{}'", userId);
-                    log.debug("Going to send parts of the profile in header: {}", profileHeaderMap);
-                } else {
-                    log.debug("No profile information found in local storage for user '{}'", userId);
-                }
-                handleRequest(req, bodyData, targetUri, log, profileHeaderMap, afterHandler);
-            });
-        } else {
-            handleRequest(req, bodyData, targetUri, log, null, afterHandler);
-        }
+
+        maybeAuthenticate(rule).onComplete(event -> {
+            if(event.failed()) {
+                req.resume();
+                log.error("Failed to authenticate request. Cause: {}", event.cause().getMessage());
+                respondError(req, StatusCode.UNAUTHORIZED);
+                return;
+            }
+            Optional<AuthHeader> authHeader = event.result();
+            if (userId != null && rule.getProfile() != null && userProfilePath != null) {
+                log.debug("Get profile information for user '{}' to append to headers", userId);
+                String userProfileKey = String.format(userProfilePath, userId);
+                storage.get(userProfileKey, buffer -> {
+                    Map<String, String> profileHeaderMap = new HashMap<>();
+                    if (buffer != null) {
+                        JsonObject profile = new JsonObject(buffer.toString());
+                        profileHeaderMap = createProfileHeaderValues(profile, log);
+                        log.debug("Got profile information of user '{}'", userId);
+                        log.debug("Going to send parts of the profile in header: {}", profileHeaderMap);
+                    } else {
+                        log.debug("No profile information found in local storage for user '{}'", userId);
+                    }
+                    handleRequest(req, bodyData, targetUri, log, profileHeaderMap, authHeader, afterHandler);
+                });
+            } else {
+                handleRequest(req, bodyData, targetUri, log, null, authHeader, afterHandler);
+            }
+        });
     }
 
     /**
@@ -220,8 +235,10 @@ public class Forwarder extends AbstractForwarder {
         return evalScope.getErrorMessage();
     }
 
-    private void handleRequest(final HttpServerRequest req, final Buffer bodyData, final String targetUri, final Logger log, final Map<String, String> profileHeaderMap, @Nullable final Handler<Void> afterHandler) {
-        final LoggingHandler loggingHandler = new LoggingHandler(loggingResourceManager, req, vertx.eventBus());
+    private void handleRequest(final HttpServerRequest req, final Buffer bodyData, final String targetUri,
+                               final Logger log, final Map<String, String> profileHeaderMap,
+                               Optional<AuthHeader> authHeader, @Nullable final Handler<Void> afterHandler) {
+        final LoggingHandler loggingHandler = new LoggingHandler(loggingResourceManager, logAppenderRepository, req, vertx.eventBus());
 
         final String uniqueId = req.headers().get("x-rp-unique_id");
         final String timeout = req.headers().get("x-timeout");
@@ -263,9 +280,7 @@ public class Forwarder extends AbstractForwarder {
                 }
                 setProfileHeaders(log, profileHeaderMap, cReq);
 
-                if (base64UsernamePassword != null) {
-                    cReq.headers().set("Authorization", "Basic " + base64UsernamePassword);
-                }
+                authHeader.ifPresent(authHeaderValue -> cReq.headers().set(authHeaderValue.key(), authHeaderValue.value()));
 
                 final String errorMessage = applyHeaderFunctions(log, cReq.headers());
                 if (errorMessage != null) {
@@ -389,6 +404,13 @@ public class Forwarder extends AbstractForwarder {
                 loggingHandler.request(cReq.headers());
             }
         });
+    }
+
+    private Future<Optional<AuthHeader>> maybeAuthenticate(Rule rule) {
+        if (authStrategy == null) {
+            return Future.succeededFuture(Optional.empty());
+        }
+        return authStrategy.authenticate(rule).compose(authHeader -> Future.succeededFuture(Optional.of(authHeader)));
     }
 
     private void setProfileHeaders(Logger log, Map<String, String> profileHeaderMap, HttpClientRequest cReq) {
