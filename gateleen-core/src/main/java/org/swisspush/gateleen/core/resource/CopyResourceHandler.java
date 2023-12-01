@@ -210,7 +210,7 @@ public class CopyResourceHandler {
             return null;
         }
 
-        HttpHeaderUtil.removeNonForwardHeaders(headers, request.absoluteURI());
+        HttpHeaderUtil.removeNonForwardHeaders(headers, request.uri());
         headers.remove("content-length");
 
         // create copy task

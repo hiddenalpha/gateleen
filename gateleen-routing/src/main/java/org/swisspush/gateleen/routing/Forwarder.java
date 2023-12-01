@@ -269,7 +269,7 @@ public class Forwarder extends AbstractForwarder {
 
                 // per https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.10
                 MultiMap headersToForward = req.headers();
-                headersToForward = removeNonForwardHeaders(headersToForward, req.absoluteURI());
+                headersToForward = removeNonForwardHeaders(headersToForward, req.uri());
                 HttpHeaderUtil.mergeHeaders(cReq.headers(), headersToForward, targetUri);
                 if (!ResponseStatusCodeLogUtil.isRequestToExternalTarget(target)) {
                     cReq.headers().set(SELF_REQUEST_HEADER, "true");
@@ -484,7 +484,7 @@ public class Forwarder extends AbstractForwarder {
 
             // Add received headers to original request but remove headers that should not get forwarded.
             MultiMap headersToForward = cRes.headers();
-            headersToForward = removeNonForwardHeaders(headersToForward, cRes.request().absoluteURI());
+            headersToForward = removeNonForwardHeaders(headersToForward, cRes.request().getURI());
             HttpHeaderUtil.mergeHeaders(req.response().headers(), headersToForward, targetUri);
             if (profileHeaderMap != null && !profileHeaderMap.isEmpty()) {
                 HttpHeaderUtil.mergeHeaders(req.response().headers(), MultiMap.caseInsensitiveMultiMap().addAll(profileHeaderMap), targetUri);
