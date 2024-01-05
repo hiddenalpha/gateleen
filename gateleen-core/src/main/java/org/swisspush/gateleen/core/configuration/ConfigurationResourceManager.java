@@ -192,11 +192,11 @@ public class ConfigurationResourceManager implements LoggableResource {
                         if (event.result().isSuccess()) {
                             promise.complete(Optional.of(buffer));
                         } else {
-                            promise.fail(new Exception("Failure during validation of resource " + resourceUri + ". Message: " + event.result().getMessage()));
+                            promise.fail(new Exception("Failure during validation of resource "
+                                    + resourceUri + ". Message: " + event.result().getMessage()));
                         }
                     } else {
-                        if( log.isWarnEnabled() ) log.warn("TODO report stacktrace to caller", new Exception("stacktrace", event.cause()));
-                        promise.fail("ReleaseLockRedisCommand request failed with message: " + event.cause());
+                        promise.fail(new Exception("ReleaseLockRedisCommand request failed", event.cause()));
                     }
                 });
             } else {

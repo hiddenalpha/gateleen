@@ -63,7 +63,7 @@ public class ReleaseLockRedisCommand implements RedisCommand {
                                     arguments, redisProvider, log, promise), executionCounter);
                         }
                     } else {
-                        if( log.isWarnEnabled() ) log.warn("stacktrace", new Exception("stacktrace", ex));
+                        if( log.isWarnEnabled() ) log.warn("ReleaseLockRedisCommand request failed", new Exception("stacktrace", ex));
                         promise.fail("ReleaseLockRedisCommand request failed with message: " + message);
                     }
                 }
