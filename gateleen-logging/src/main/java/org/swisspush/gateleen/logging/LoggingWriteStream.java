@@ -3,8 +3,12 @@ package org.swisspush.gateleen.logging;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.streams.WriteStream;
+import org.slf4j.Logger;
+
+import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * Wraps a WriteStream and feeds trsnferred Buffers into a LoggingHandler - interpreted either as
@@ -12,6 +16,7 @@ import io.vertx.core.streams.WriteStream;
  */
 public class LoggingWriteStream implements WriteStream<Buffer> {
 
+    private static final Logger log = getLogger(LoggingWriteStream.class);
     private final WriteStream<Buffer> wrappedWriteStream;
     private final LoggingHandler loggingHandler;
     private final boolean isRequest;
@@ -36,10 +41,12 @@ public class LoggingWriteStream implements WriteStream<Buffer> {
 
     @Override
     public Future<Void> write(Buffer data) {
+        Promise<Void> promise = Promise.promise();
         write(data, event -> {
-
+            if( event.failed() ) promise.fail(new Exception(null, event.cause()));
+            else promise.complete();
         });
-        return Future.succeededFuture();
+        return promise.future();
     }
 
     @Override
