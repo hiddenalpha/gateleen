@@ -12,6 +12,7 @@ import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.http.HeaderFunctions;
+import org.swisspush.gateleen.core.http.LocalHttpClientRequest;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
 import org.swisspush.gateleen.core.storage.ResourceStorage;
 import org.swisspush.gateleen.core.util.HttpHeaderUtil;

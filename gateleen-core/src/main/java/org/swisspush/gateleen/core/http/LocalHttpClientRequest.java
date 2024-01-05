@@ -38,6 +38,7 @@ import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -48,6 +49,7 @@ import static org.slf4j.LoggerFactory.getLogger;
  */
 public class LocalHttpClientRequest extends BufferBridge implements FastFailHttpClientRequest {
     private static final Logger log = getLogger(LocalHttpClientRequest.class);
+    private final Vertx vertx;
     private MultiMap headers = new HeadersMultiMap();
     private MultiMap params;
     private HttpMethod method;
@@ -522,11 +524,12 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
 
     public LocalHttpClientRequest(HttpMethod method, String uri, Vertx vertx, Handler<RoutingContext> routingContextHandler, HttpServerResponse response) {
         super(vertx);
+        this.vertx = vertx;
         this.method = method;
         this.uri = uri;
         this.routingContextHandler = routingContextHandler;
         this.serverResponse = response;
-        this.connection = new LocalHttpConnection();
+        this.connection = new LocalHttpConnection(this);
     }
 
     @Override
@@ -816,4 +819,10 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
     public void setUri(String uri) {
         this.uri = uri;
     }
+
+    void onCloseConnectionRequest(Consumer<Throwable> onComplete) {
+        log.warn("TODO release resources here!");
+        if( onComplete != null ) vertx.runOnContext(v -> onComplete.accept(null));
+    }
+
 }

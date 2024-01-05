@@ -4,13 +4,13 @@ import io.vertx.codegen.annotations.Nullable;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.GoAway;
 import io.vertx.core.http.Http2Settings;
 import io.vertx.core.http.HttpConnection;
 import io.vertx.core.net.SocketAddress;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
@@ -27,6 +27,11 @@ import static org.slf4j.LoggerFactory.getLogger;
 public class LocalHttpConnection implements HttpConnection {
 
     private static final Logger log = getLogger(LocalHttpConnection.class);
+    private final LocalHttpClientRequest localHttpClientRequest;
+
+    public LocalHttpConnection(LocalHttpClientRequest localHttpClientRequest) {
+        this.localHttpClientRequest = localHttpClientRequest;
+    }
 
     @Override
     public HttpConnection goAway(long errorCode, int lastStreamId, Buffer debugData) {
@@ -62,7 +67,12 @@ public class LocalHttpConnection implements HttpConnection {
 
     @Override
     public Future<Void> close() {
-        throw new UnsupportedOperationException("LocalConnection don't support this");
+        Promise<Void> p = Promise.promise();
+        localHttpClientRequest.onCloseConnectionRequest( ex -> {
+            if (ex != null) p.fail(ex);
+            else p.complete();
+        });
+        return p.future();
     }
 
 
