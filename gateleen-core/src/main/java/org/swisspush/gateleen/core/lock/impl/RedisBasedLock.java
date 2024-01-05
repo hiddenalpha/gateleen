@@ -47,7 +47,6 @@ public class RedisBasedLock implements Lock {
         }
         redisProvider.redis().onComplete( redisEv -> {
             if( redisEv.failed() ){
-                if( log.isInfoEnabled() ) log.info("stacktrace", new Exception("stacktrace", redisEv.cause()));
                 handler.handle(new FailedAsyncResult<>(redisEv.cause()));
                 return;
             }

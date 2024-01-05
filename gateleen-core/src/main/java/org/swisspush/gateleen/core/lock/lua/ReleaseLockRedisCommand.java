@@ -57,14 +57,13 @@ public class ReleaseLockRedisCommand implements RedisCommand {
                         log.warn("ReleaseLockRedisCommand script couldn't be found, reload it", new Exception("stacktrace",ex));
                         log.warn("amount the script got loaded: {}", executionCounter);
                         if (executionCounter > 10) {
-                            promise.fail("amount the script got loaded is higher than 10, we abort");
+                            promise.fail(new Exception("amount the script got loaded is higher than 10, we abort"));
                         } else {
                             luaScriptState.loadLuaScript(new ReleaseLockRedisCommand(luaScriptState, keys,
                                     arguments, redisProvider, log, promise), executionCounter);
                         }
                     } else {
-                        if( log.isWarnEnabled() ) log.warn("ReleaseLockRedisCommand request failed", new Exception("stacktrace", ex));
-                        promise.fail("ReleaseLockRedisCommand request failed with message: " + message);
+                        promise.fail(new Exception("ReleaseLockRedisCommand request failed", ex));
                     }
                 }
             });
