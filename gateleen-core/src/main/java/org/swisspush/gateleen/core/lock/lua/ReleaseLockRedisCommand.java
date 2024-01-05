@@ -42,7 +42,7 @@ public class ReleaseLockRedisCommand implements RedisCommand {
 
         redisProvider.redis().onComplete( redisEv -> {
             if( redisEv.failed() ){
-                promise.fail(new Exception("Redis: ReleaseLockRedisCommand request failed", redisEv.cause()));
+                promise.fail(new Exception("redisProvider.redis()", redisEv.cause()));
                 return;
             }
             RedisAPI redisAPI = redisEv.result();
@@ -54,16 +54,17 @@ public class ReleaseLockRedisCommand implements RedisCommand {
                     Throwable ex = event.cause();
                     String message = ex.getMessage();
                     if (message != null && message.startsWith("NOSCRIPT")) {
-                        log.warn("ReleaseLockRedisCommand script couldn't be found, reload it", ex);
+                        log.warn("ReleaseLockRedisCommand script couldn't be found, reload it", new Exception("stacktrace",ex));
                         log.warn("amount the script got loaded: {}", executionCounter);
                         if (executionCounter > 10) {
-                            promise.fail(new Exception("amount the script got loaded is higher than 10, we abort"));
+                            promise.fail("amount the script got loaded is higher than 10, we abort");
                         } else {
                             luaScriptState.loadLuaScript(new ReleaseLockRedisCommand(luaScriptState, keys,
                                     arguments, redisProvider, log, promise), executionCounter);
                         }
                     } else {
-                        promise.fail(new Exception("ReleaseLockRedisCommand request failed", ex));
+                        if( log.isWarnEnabled() ) log.warn("stacktrace", new Exception("stacktrace", ex));
+                        promise.fail("ReleaseLockRedisCommand request failed with message: " + message);
                     }
                 }
             });

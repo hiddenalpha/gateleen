@@ -47,17 +47,15 @@ public class RedisBasedLock implements Lock {
         }
         redisProvider.redis().onComplete( redisEv -> {
             if( redisEv.failed() ){
-                handler.handle(new FailedAsyncResult<>(new Exception("stacktrace", redisEv.cause())));
+                if( log.isInfoEnabled() ) log.info("stacktrace", new Exception("stacktrace", redisEv.cause()));
+                handler.handle(new FailedAsyncResult<>(redisEv.cause()));
                 return;
             }
             var redisAPI = redisEv.result();
             redisAPI.send(Command.SET, RedisUtils.toPayload(key, value, options).toArray(new String[0]))
                     .onComplete( ev -> {
-                        if( ev.failed() ){
-                            handler.handle(new FailedAsyncResult<>(new Exception("stacktrace", ev.cause())));
-                        } else {
-                            handler.handle(ev);
-                        }
+                        if( ev.failed() && log.isInfoEnabled() ) log.info("stacktrace", new Exception("stacktrace", ev.cause()));
+                        handler.handle(ev);
                     });
         });
     }
@@ -73,7 +71,8 @@ public class RedisBasedLock implements Lock {
                     promise.complete(false);
                 }
             } else {
-                promise.fail(new Exception("stacktrace", new Exception(event.cause())));
+                if( log.isInfoEnabled() ) log.info("stacktrace", new Exception("stacktrace", event.cause()));
+                promise.fail(event.cause().getMessage());
             }
         });
         return promise.future();
