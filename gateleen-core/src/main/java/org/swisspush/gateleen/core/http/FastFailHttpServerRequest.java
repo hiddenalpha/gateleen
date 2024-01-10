@@ -23,8 +23,10 @@ import java.util.Set;
  * A {@link HttpServerRequest} throwing an exception no matter which method got
  * called.
  *
- * This is useful for testing. For testing inherit from this and override the
+ * This is useful for TESTING. For testing inherit from this and override the
  * methods you need to mock.
+ *
+ * <p>This is intended for TESTING and MUST NOT BE USED FOR PRODUCTION!!!!!!</p>
  *
  */
 public interface FastFailHttpServerRequest extends HttpServerRequestInternal {

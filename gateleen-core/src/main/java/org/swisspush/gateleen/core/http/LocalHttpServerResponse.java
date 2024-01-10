@@ -224,8 +224,12 @@ public class LocalHttpServerResponse extends BufferBridge implements FastFailHtt
             throw ex;
         }
         ensureBound();
-        doWrite(data);
-        return Future.succeededFuture();
+        Promise<Void> p = Promise.promise();
+        doWrite(data, ex -> {
+            if (ex != null) p.fail(ex);
+            else p.complete();
+        });
+        return p.future();
     }
 
     @Override

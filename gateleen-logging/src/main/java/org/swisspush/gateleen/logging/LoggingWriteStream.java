@@ -6,9 +6,6 @@ import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.streams.WriteStream;
-import org.slf4j.Logger;
-
-import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * Wraps a WriteStream and feeds trsnferred Buffers into a LoggingHandler - interpreted either as
@@ -16,7 +13,6 @@ import static org.slf4j.LoggerFactory.getLogger;
  */
 public class LoggingWriteStream implements WriteStream<Buffer> {
 
-    private static final Logger log = getLogger(LoggingWriteStream.class);
     private final WriteStream<Buffer> wrappedWriteStream;
     private final LoggingHandler loggingHandler;
     private final boolean isRequest;
@@ -41,17 +37,17 @@ public class LoggingWriteStream implements WriteStream<Buffer> {
 
     @Override
     public Future<Void> write(Buffer data) {
-        Promise<Void> promise = Promise.promise();
+        Promise<Void> p = Promise.promise();
         write(data, event -> {
-            if( event.failed() ) promise.fail(new Exception(null, event.cause()));
-            else promise.complete();
+            if( event.failed() ) p.fail(event.cause());
+            else p.complete();
         });
-        return promise.future();
+        return p.future();
     }
 
     @Override
     public void write(Buffer data, Handler<AsyncResult<Void>> handler) {
-        wrappedWriteStream.write(data);
+        wrappedWriteStream.write(data, handler);
         if (isRequest) {
             loggingHandler.appendRequestPayload(data);
         } else {

@@ -9,6 +9,8 @@ import io.vertx.core.buffer.Buffer;
 
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * Support class bridging a buffer writer and dataHandler / endHandler pair.
@@ -51,22 +53,25 @@ public class BufferBridge {
         });
     }
 
-    protected void doWrite(Buffer chunk) {
-        body.appendBuffer(chunk);
-        if (dataHandler != null && queue.isEmpty()) {
-            log.trace("Writing directly to handler");
-            try {
+    protected void doWrite(Buffer chunk, Consumer<Throwable> onComplete) {
+        try {
+            body.appendBuffer(chunk);
+            if (dataHandler != null && queue.isEmpty()) {
+                log.trace("Writing directly to handler");
                 dataHandler.handle(chunk);
-            } catch (Exception e) {
-                if (exceptionHandler != null) {
-                    exceptionHandler.handle(e);
-                } else {
-                    log.warn("TODO error handling", e);
-                }
+            } else {
+                log.trace("Writing to queue");
+                queue.offer(chunk);
             }
-        } else {
-            log.trace("Writing to queue");
-            queue.offer(chunk);
+            if( onComplete != null ) onComplete.accept(null);
+        }catch( RuntimeException ex ){
+            if( onComplete != null ){
+                onComplete.accept(ex);
+            }else if (exceptionHandler != null) {
+                exceptionHandler.handle(ex);
+            } else {
+                log.warn("TODO error handling", ex);
+            }
         }
     }
 
