@@ -14,7 +14,7 @@ import org.swisspush.gateleen.core.util.StatusCode;
 
 public class DefaultCacheDataFetcher implements CacheDataFetcher {
 
-    private Logger log = LoggerFactory.getLogger(DefaultCacheDataFetcher.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultCacheDataFetcher.class);
     private final ClientRequestCreator clientRequestCreator;
 
     private static final String SELF_REQUEST_HEADER = "x-self-request";
@@ -42,6 +42,7 @@ public class DefaultCacheDataFetcher implements CacheDataFetcher {
     public DefaultCacheDataFetcher(ClientRequestCreator clientRequestCreator, String customCacheControlHeader) {
         this.clientRequestCreator = clientRequestCreator;
         this.cacheControlHeader = customCacheControlHeader;
+
     }
 
     @Override
@@ -58,7 +59,8 @@ public class DefaultCacheDataFetcher implements CacheDataFetcher {
                     promise.complete(Result.err(StatusCode.INTERNAL_SERVER_ERROR));
                 }).onComplete(event -> {
             if (event.failed()) {
-                log.warn("Failed request to {}: {}", requestUri, event.cause());
+                if( log.isDebugEnabled() ) log.warn("Failed request to {}", requestUri, new Exception("stack", event.cause()));
+                else log.warn("Failed request to {}: {}", requestUri, event.cause());
                 return;
             }
             HttpClientRequest cReq = event.result();

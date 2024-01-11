@@ -9,11 +9,14 @@ import org.swisspush.gateleen.core.util.RedisUtils;
 
 import java.util.List;
 
+import static org.slf4j.LoggerFactory.getLogger;
+
 /**
  * @author https://github.com/mcweba [Marc-Andre Weber]
  */
 public class ClearCacheRedisCommand implements RedisCommand {
 
+    private static final Logger LOG = getLogger(ClearCacheRedisCommand.class);
     private final LuaScriptState luaScriptState;
     private final List<String> keys;
     private final List<String> arguments;
@@ -50,6 +53,7 @@ public class ClearCacheRedisCommand implements RedisCommand {
                                 redisProvider, log, promise), executionCounter);
                     }
                 } else {
+                    if( LOG.isDebugEnabled() ) LOG.debug("stacktrace", new Exception(event.cause()));
                     promise.fail("ClearCacheRedisCommand request failed with message: " + message);
                 }
             }

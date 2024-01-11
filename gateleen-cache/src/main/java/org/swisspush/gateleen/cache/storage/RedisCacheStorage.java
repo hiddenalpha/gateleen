@@ -90,9 +90,8 @@ public class RedisCacheStorage implements CacheStorage {
         Promise<Optional<Buffer>> promise = Promise.promise();
         redisProvider.redis().onSuccess(redisAPI -> redisAPI.get(CACHE_PREFIX + cacheIdentifier, event -> {
             if (event.failed()) {
-                String message = "Failed to get cached request '" + cacheIdentifier + "'. Cause: " + logCause(event);
-                log.error(message);
-                promise.fail(message);
+                log.error("Failed to get cached request '{}'.", cacheIdentifier, event.cause());
+                promise.fail("Failed to get cached request '" + cacheIdentifier + "'. Cause: " + logCause(event));
             } else {
                 if (event.result() != null) {
                     promise.complete(Optional.of(Buffer.buffer(event.result().toBytes())));
@@ -101,9 +100,8 @@ public class RedisCacheStorage implements CacheStorage {
                 }
             }
         })).onFailure(throwable -> {
-            String message = "Redis: Failed to get cached request '" + cacheIdentifier + "'. Cause: " + throwable.getMessage();
-            log.error(message);
-            promise.fail(message);
+            log.error("Redis: Failed to get cached request '{}'.", cacheIdentifier, throwable);
+            promise.fail("Redis: Failed to get cached request '" + cacheIdentifier + "'. Cause: " + throwable.getMessage());
         });
         return promise.future();
     }
@@ -123,16 +121,14 @@ public class RedisCacheStorage implements CacheStorage {
         Promise<Long> promise = Promise.promise();
         redisProvider.redis().onSuccess(redisAPI -> redisAPI.scard(CACHED_REQUESTS, reply -> {
             if (reply.failed()) {
-                String message = "Failed to get count of cached requests. Cause: " + logCause(reply);
-                log.error(message);
-                promise.fail(message);
+                log.error("Failed to get count of cached requests.", reply.cause());
+                promise.fail("Failed to get count of cached requests. Cause: " + logCause(reply));
             } else {
                 promise.complete(reply.result().toLong());
             }
         })).onFailure(throwable -> {
-            String message = "Redis: Failed to get count of cached requests. Cause: " + throwable.getMessage();
-            log.error(message);
-            promise.fail(message);
+            log.error("Redis: Failed to get count of cached requests.", throwable);
+            promise.fail("Redis: Failed to get count of cached requests. Cause: " + throwable.getMessage());
         });
 
         return promise.future();
@@ -143,9 +139,8 @@ public class RedisCacheStorage implements CacheStorage {
         Promise<Set<String>> promise = Promise.promise();
         redisProvider.redis().onSuccess(redisAPI -> redisAPI.smembers(CACHED_REQUESTS, reply -> {
             if (reply.failed()) {
-                String message = "Failed to get cached requests. Cause: " + logCause(reply);
-                log.error(message);
-                promise.fail(message);
+                log.error("Failed to get cached requests.", reply.cause());
+                promise.fail("Failed to get cached requests. Cause: " + logCause(reply));
             } else {
                 JsonArray array = new JsonArray();
                 reply.result().stream().forEach(array::add);
