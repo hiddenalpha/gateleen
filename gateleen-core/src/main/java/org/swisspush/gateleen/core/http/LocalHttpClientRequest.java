@@ -197,7 +197,7 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
 
         @Override
         public HttpServerRequest resume() {
-            log.warn("resume not implemented: {}", getClass().getName());
+            log.debug("resume not implemented: {}", getClass().getName());
             return this;
         }
 
@@ -208,13 +208,17 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
 
         @Override
         public HttpServerRequest exceptionHandler(Handler<Throwable> handler) {
-            log.warn("Happy timeout. As this will ignore your 'exceptionHandler' anyway.");
+            if (log.isDebugEnabled()) {
+                log.debug("Happy timeout. As this will ignore your 'exceptionHandler' anyway.", new Exception("stack"));
+            }
             return this;
         }
 
         @Override
         public boolean isEnded() {
-            log.warn("isEnded() may lie to you. {}", getClass().getName());
+            if (log.isDebugEnabled()) {
+                log.debug("isEnded() may lie to you. {}", getClass().getName(), new Exception("stack"));
+            }
             return false;
         }
 
@@ -465,13 +469,13 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
 
     @Override
     public HttpClientRequest setTimeout(long timeoutMs) {
-        log.warn("Happy debugging. This method just ignores you: {}.setTimeout({})", getClass().getName(), timeoutMs);
+        log.debug("Happy debugging. This method just ignores you: {}.setTimeout({})", getClass().getName(), timeoutMs);
         return this;
     }
 
     @Override
     public HttpClientRequest pushHandler(Handler<HttpClientRequest> handler) {
-        log.warn("Happy debugging. This method just ignores you: {}.pushHandler()", getClass().getName());
+        log.debug("Happy debugging. This method just ignores you: {}.pushHandler()", getClass().getName());
         return this;
     }
 
@@ -480,13 +484,13 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
 
     @Override
     public HttpClientRequest connectionHandler(@Nullable Handler<HttpConnection> handler) {
-        log.warn("Happy debugging. This method just ignores you: {}.connectionHandler()", getClass().getName());
+        log.debug("Happy debugging. This method just ignores you: {}.connectionHandler()", getClass().getName());
         return this;
     }
 
     @Override
     public HttpClientRequest writeCustomFrame(int type, int flags, Buffer payload) {
-        log.warn("Happy debugging. This method just ignores you: {}.writeCustomFrame()", getClass().getName());
+        log.debug("Happy debugging. This method just ignores you: {}.writeCustomFrame()", getClass().getName());
         return this;
     }
 
@@ -497,14 +501,16 @@ public class LocalHttpClientRequest extends BufferBridge implements FastFailHttp
 
     @Override
     public boolean writeQueueFull() {
-        log.warn("This method may lie to you: {}.writeQueueFull()", getClass().getName());
+        log.debug("This method may lie to you: {}.writeQueueFull()", getClass().getName());
         return false;
     }
 
     @Override
     public HttpClientRequest drainHandler(Handler<Void> handler) {
-        log.warn("Happy debugging, as this impl will just ignore your drainHandler anyway",
-                new Exception("may this stacktrace lead you where this problem comes from"));
+        if( log.isDebugEnabled() ){
+            log.debug("Happy debugging. This method just ignores you: {}.drainHandler()",
+                    getClass().getName(), new Exception("find the caller"));
+        }
         return this;
     }
 

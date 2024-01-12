@@ -90,8 +90,10 @@ public class RedisCacheStorage implements CacheStorage {
         Promise<Optional<Buffer>> promise = Promise.promise();
         redisProvider.redis().onSuccess(redisAPI -> redisAPI.get(CACHE_PREFIX + cacheIdentifier, event -> {
             if (event.failed()) {
-                log.error("Failed to get cached request '{}'.", cacheIdentifier, event.cause());
-                promise.fail("Failed to get cached request '" + cacheIdentifier + "'. Cause: " + logCause(event));
+                String message = "Failed to get cached request '" + cacheIdentifier + "'. Cause: " + logCause(event);
+                if (log.isDebugEnabled()) log.debug("{}", message, new Exception(event.cause()));
+                log.error(message);
+                promise.fail(message);
             } else {
                 if (event.result() != null) {
                     promise.complete(Optional.of(Buffer.buffer(event.result().toBytes())));
@@ -100,8 +102,10 @@ public class RedisCacheStorage implements CacheStorage {
                 }
             }
         })).onFailure(throwable -> {
-            log.error("Redis: Failed to get cached request '{}'.", cacheIdentifier, throwable);
-            promise.fail("Redis: Failed to get cached request '" + cacheIdentifier + "'. Cause: " + throwable.getMessage());
+            String message = "Redis: Failed to get cached request '" + cacheIdentifier + "'. Cause: " + throwable.getMessage();
+            if (log.isDebugEnabled()) log.debug("{}", message, new Exception(throwable));
+            log.error(message);
+            promise.fail(message);
         });
         return promise.future();
     }
@@ -121,14 +125,18 @@ public class RedisCacheStorage implements CacheStorage {
         Promise<Long> promise = Promise.promise();
         redisProvider.redis().onSuccess(redisAPI -> redisAPI.scard(CACHED_REQUESTS, reply -> {
             if (reply.failed()) {
-                log.error("Failed to get count of cached requests.", reply.cause());
-                promise.fail("Failed to get count of cached requests. Cause: " + logCause(reply));
+                String message = "Failed to get count of cached requests. Cause: " + logCause(reply);
+                if (log.isDebugEnabled()) log.debug("{}", message, new Exception(reply.cause()));
+                log.error(message);
+                promise.fail(message);
             } else {
                 promise.complete(reply.result().toLong());
             }
         })).onFailure(throwable -> {
-            log.error("Redis: Failed to get count of cached requests.", throwable);
-            promise.fail("Redis: Failed to get count of cached requests. Cause: " + throwable.getMessage());
+            String message = "Redis: Failed to get count of cached requests. Cause: " + throwable.getMessage();
+            if (log.isDebugEnabled()) log.debug("{}", message, new Exception(throwable));
+            log.error(message);
+            promise.fail(message);
         });
 
         return promise.future();
@@ -139,8 +147,10 @@ public class RedisCacheStorage implements CacheStorage {
         Promise<Set<String>> promise = Promise.promise();
         redisProvider.redis().onSuccess(redisAPI -> redisAPI.smembers(CACHED_REQUESTS, reply -> {
             if (reply.failed()) {
-                log.error("Failed to get cached requests.", reply.cause());
-                promise.fail("Failed to get cached requests. Cause: " + logCause(reply));
+                String message = "Failed to get cached requests. Cause: " + logCause(reply);
+                if (log.isDebugEnabled()) log.debug("{}", message, new Exception(reply.cause()));
+                log.error(message);
+                promise.fail(message);
             } else {
                 JsonArray array = new JsonArray();
                 reply.result().stream().forEach(array::add);
@@ -152,6 +162,7 @@ public class RedisCacheStorage implements CacheStorage {
             }
         })).onFailure(throwable -> {
             String message = "Redis: Failed to get cached requests. Cause: " + throwable.getMessage();
+            if( log.isDebugEnabled() ) log.debug("{}", message, new Exception(throwable));
             log.error(message);
             promise.fail(message);
         });
