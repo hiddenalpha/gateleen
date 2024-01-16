@@ -8,6 +8,7 @@ import io.vertx.core.http.*;
 import io.vertx.core.http.impl.headers.HeadersMultiMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.swisspush.gateleen.core.util.FailedAsyncResult;
 import org.swisspush.gateleen.core.util.StatusCode;
 
 import java.util.Set;
@@ -17,7 +18,7 @@ import java.util.Set;
  *
  * @author https://github.com/lbovet [Laurent Bovet]
  */
-public class LocalHttpServerResponse extends BufferBridge implements FastFailHttpServerResponse {
+public class LocalHttpServerResponse extends BufferBridge implements HttpServerResponse {
 
     private static final Logger logger = LoggerFactory.getLogger(LocalHttpServerResponse.class);
     private int statusCode;
@@ -29,6 +30,8 @@ public class LocalHttpServerResponse extends BufferBridge implements FastFailHtt
     private boolean closed = false;
     private boolean written = false;
     private Handler<AsyncResult<HttpClientResponse>> responseHandler;
+    private Handler<Throwable> exceptionHandler;
+
     public HttpClientResponse clientResponse = new FastFaiHttpClientResponse() {
         @Override
         public int statusCode() {
@@ -335,6 +338,7 @@ public class LocalHttpServerResponse extends BufferBridge implements FastFailHtt
 
     @Override
     public HttpServerResponse exceptionHandler(Handler<Throwable> handler) {
+        exceptionHandler = handler;
         setExceptionHandler(handler);
         return this;
     }
@@ -342,4 +346,32 @@ public class LocalHttpServerResponse extends BufferBridge implements FastFailHtt
     public void setHttpClientResponseHandler(Handler<AsyncResult<HttpClientResponse>> responseHandler) {
         this.responseHandler = responseHandler;
     }
+
+    private static final String notImplMsg = "TODO implement this method (findme_24j30ohajito928gjoiq2984)";
+    @Override public MultiMap trailers() { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse putTrailer(String name, String value) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse putTrailer(CharSequence name, CharSequence value) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse putTrailer(String name, Iterable<String> values) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse putTrailer(CharSequence name, Iterable<CharSequence> value) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse endHandler(@Nullable Handler<Void> handler) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse writeContinue() { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public void end(String chunk, Handler<AsyncResult<Void>> handler) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public void end(String chunk, String enc, Handler<AsyncResult<Void>> handler) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public void end(Buffer chunk, Handler<AsyncResult<Void>> handler) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public void end(Handler<AsyncResult<Void>> handler) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public Future<Void> sendFile(String filename, long offset, long length) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse sendFile(String filename, long offset, long length, Handler<AsyncResult<Void>> resultHandler) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse headersEndHandler(@Nullable Handler<Void> handler) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse bodyEndHandler(@Nullable Handler<Void> handler) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public long bytesWritten() { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public int streamId() { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public Future<HttpServerResponse> push(HttpMethod method, String host, String path, MultiMap headers) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public boolean reset(long code) { throw new UnsupportedOperationException(notImplMsg+" "+code); }
+    @Override public HttpServerResponse writeCustomFrame(int type, int flags, Buffer payload) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse addCookie(Cookie cookie) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public @Nullable Cookie removeCookie(String name, boolean invalidate) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public Set<Cookie> removeCookies(String name, boolean invalidate) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public @Nullable Cookie removeCookie(String name, String domain, String path, boolean invalidate) { throw new UnsupportedOperationException(notImplMsg); }
+    @Override public HttpServerResponse drainHandler(Handler<Void> handler) { throw new UnsupportedOperationException(notImplMsg); }
+
 }

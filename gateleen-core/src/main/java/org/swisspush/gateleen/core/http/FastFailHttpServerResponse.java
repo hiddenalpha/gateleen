@@ -20,6 +20,8 @@ import java.util.Set;
  * <p>
  * This is useful for testing. For testing inherit from this and override the
  * methods you need to mock.
+ *
+ * <p>THIS IS A MOCK FOR TESTING, AND FOR TESTING ONLY! DO NOT USE THIS IN PRODUCTION CODE!</p>
  */
 public interface FastFailHttpServerResponse extends HttpServerResponse {
 
