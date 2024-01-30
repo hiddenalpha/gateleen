@@ -41,6 +41,7 @@ public class EventBusResourceStorage implements ResourceStorage {
             Buffer buffer = message.result().body();
             int headerLength = buffer.getInt(0);
             JsonObject header1 = new JsonObject(buffer.getString(4, headerLength + 4));
+            assert header1.getInteger("statusCode") != null : "TODO_93875wzu9ojaha";
             if (header1.getInteger("statusCode") == 200) {
                 bodyHandler.handle(buffer.getBuffer(4 + headerLength, buffer.length()));
             } else {
@@ -54,9 +55,12 @@ public class EventBusResourceStorage implements ResourceStorage {
         Buffer header = Buffer.buffer(new HttpRequest(HttpMethod.PUT, uri, headers, null).toJsonObject().encode());
         Buffer request = Buffer.buffer(4 + header.length());
         request.setInt(0, header.length()).appendBuffer(header).appendBuffer(buffer);
+        var stacktrace = new Exception();
         eventBus.request(address, request, (Handler<AsyncResult<Message<Buffer>>>) message -> {
             if (message.failed()) {
-                log.warn("Got failed msg from event bus while PUT. Lets run into NPE now.", message.cause());
+                var ex = message.cause();
+                ex.addSuppressed(stacktrace);
+                log.warn("Got failed msg from event bus while PUT. Lets run into NPE now.", ex);
                 // Would be best to stop processing now. But we don't to keep backward
                 // compatibility (Will run into NPE anyway).
             }

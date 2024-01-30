@@ -1,5 +1,6 @@
 package org.swisspush.gateleen.routing;
 
+import ch.hiddenalpha.unspecifiedgarbage.gateleenKludge.tmoutissue20240123.Foo;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -419,6 +420,7 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
 
         if (defaultRouteTypes.contains(INFO)) {
             newRouter.get(serverUri + "/info").handler(ctx -> {
+                Foo.onGetHoustonServerInfo(ctx);
                 if (HttpMethod.GET == ctx.request().method()) {
                     ctx.response().headers().set("Content-Type", "application/json");
                     ctx.response().end(info.toString());

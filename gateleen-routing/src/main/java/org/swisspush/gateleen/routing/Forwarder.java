@@ -1,5 +1,6 @@
 package org.swisspush.gateleen.routing;
 
+import ch.hiddenalpha.unspecifiedgarbage.gateleenKludge.tmoutissue20240123.Foo;
 import io.netty.channel.ConnectTimeoutException;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.*;
@@ -104,6 +105,7 @@ public class Forwarder extends AbstractForwarder {
 
     @Override
     public void handle(final RoutingContext ctx) {
+        Foo.getLogger(Forwarder.class).trace("handle({})", ctx.request().uri());
         handle(ctx, null, null);
     }
 
@@ -148,6 +150,7 @@ public class Forwarder extends AbstractForwarder {
         monitoringHandler.updateRequestsMeter(target, req.uri());
         monitoringHandler.updateRequestPerRuleMonitoring(req, rule.getMetricName());
         final String targetUri = urlPattern.matcher(req.uri()).replaceFirst(rule.getPath()).replaceAll("\\/\\/", "/");
+        Foo.getLogger(Forwarder.class).debug("Forwarding request: {} to {}://{} with rule {}", req.uri(), rule.getScheme(), target + targetUri, rule.getRuleIdentifier());
         log.debug("Forwarding request: {} to {}://{} with rule {}", req.uri(), rule.getScheme(), target + targetUri, rule.getRuleIdentifier());
         final String userId = extractUserId(req, log);
         req.pause(); // pause the request to avoid problems with starting another async request (storage)
