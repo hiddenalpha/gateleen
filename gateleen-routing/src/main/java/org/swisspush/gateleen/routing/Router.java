@@ -277,9 +277,9 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
         }
     }
 
-//    public boolean isRoutingBroken() {
-//        return getRoutingBrokenMessage() != null;
-//    }
+    boolean isRoutingBroken() {
+        return getRoutingBrokenMessage() != null;
+    }
 
     public String getRoutingBrokenMessage() {
         return (String) getRouterStateMap().get(ROUTER_BROKEN_KEY);
