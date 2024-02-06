@@ -7,6 +7,7 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.configuration.ConfigurationResourceManager;
+import org.swisspush.gateleen.core.debug.InfoRequestTracer;
 import org.swisspush.gateleen.core.http.HttpClientFactory;
 import org.swisspush.gateleen.core.storage.ResourceStorage;
 import org.swisspush.gateleen.logging.LoggingResourceManager;
@@ -48,6 +49,7 @@ public class RouterBuilder {
     private ArrayList<Handler<Void>> doneHandlers;
     private HttpClientFactory httpClientFactory;
     private int routeMultiplier = Router.DEFAULT_ROUTER_MULTIPLIER;
+    private InfoRequestTracer infoRequestTracer;
 
     private OAuthProvider oAuthProvider;
 
@@ -98,6 +100,7 @@ public class RouterBuilder {
                 defaultRouteTypes,
                 httpClientFactory,
                 routeMultiplier,
+                infoRequestTracer,
                 oAuthProvider,
                 doneHandlersArray
         );
@@ -244,6 +247,11 @@ public class RouterBuilder {
         return this;
     }
 
+    public RouterBuilder withInfoRequestTracer(InfoRequestTracer infoRequestTracer) {
+        this.infoRequestTracer = infoRequestTracer;
+        return this;
+    }
+
     public RouterBuilder withDoneHandlers(List<Handler<Void>> doneHandlers) {
         ensureNotBuilt();
         this.doneHandlers = new ArrayList<>(doneHandlers);
@@ -264,4 +272,5 @@ public class RouterBuilder {
         this.routeMultiplier = routeMultiplier;
         return this;
     }
+
 }

@@ -1,6 +1,5 @@
 package org.swisspush.gateleen.routing;
 
-import ch.hiddenalpha.unspecifiedgarbage.gateleenKludge.tmoutissue20240123.Foo;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -16,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.gateleen.core.configuration.ConfigurationResourceManager;
 import org.swisspush.gateleen.core.configuration.ConfigurationResourceObserver;
+import org.swisspush.gateleen.core.debug.InfoRequestTracer;
 import org.swisspush.gateleen.core.http.HttpClientFactory;
 import org.swisspush.gateleen.core.http.RequestLoggerFactory;
 import org.swisspush.gateleen.core.logging.LoggableResource;
@@ -88,6 +88,7 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
      * The multiplier applied to routes, typically the number of {@link Router} instances in a cluster.
      */
     private int routeMultiplier;
+    private InfoRequestTracer infoRequestTracer;
 
     /**
      * @return A builder which assists to create a router instance.
@@ -114,6 +115,7 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
            Set<DefaultRouteType> defaultRouteTypes,
            HttpClientFactory httpClientFactory,
            int routeMultiplier,
+           @Nullable InfoRequestTracer infoRequestTracer,
            @Nullable OAuthProvider oAuthProvider,
            Handler<Void>... doneHandlers) {
         this.storage = storage;
@@ -131,6 +133,7 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
         this.httpClientFactory = httpClientFactory;
         this.doneHandlers = doneHandlers;
         this.routeMultiplier = routeMultiplier;
+        this.infoRequestTracer = infoRequestTracer;
         this.oAuthProvider = oAuthProvider;
 
         if (oAuthProvider != null) {
@@ -274,9 +277,9 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
         }
     }
 
-    public boolean isRoutingBroken() {
-        return getRoutingBrokenMessage() != null;
-    }
+//    public boolean isRoutingBroken() {
+//        return getRoutingBrokenMessage() != null;
+//    }
 
     public String getRoutingBrokenMessage() {
         return (String) getRouterStateMap().get(ROUTER_BROKEN_KEY);
@@ -420,15 +423,22 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
 
         if (defaultRouteTypes.contains(INFO)) {
             newRouter.get(serverUri + "/info").handler(ctx -> {
-                Foo.onGetHoustonServerInfo(ctx);
+                var rsp = ctx.response();
                 if (HttpMethod.GET == ctx.request().method()) {
-                    ctx.response().headers().set("Content-Type", "application/json");
-                    ctx.response().end(info.toString());
+                    if (infoRequestTracer != null) {
+                        infoRequestTracer.onWritingHttpResponseBegin(ctx.request());
+                        rsp.headers().set("Content-Type", "application/json");
+                        rsp.end(info.toString(), endEv -> infoRequestTracer.onWritingHttpResponseEnd(endEv.cause(), ctx.request()));
+                        infoRequestTracer.onWritingHttpResponseHasReturned(ctx.request());
+                    } else {
+                        rsp.headers().set("Content-Type", "application/json");
+                        rsp.end(info.toString());
+                    }
                 } else {
                     ResponseStatusCodeLogUtil.info(ctx.request(), StatusCode.METHOD_NOT_ALLOWED, Router.class);
-                    ctx.response().setStatusCode(StatusCode.METHOD_NOT_ALLOWED.getStatusCode());
-                    ctx.response().setStatusMessage(StatusCode.METHOD_NOT_ALLOWED.getStatusMessage());
-                    ctx.response().end();
+                    rsp.setStatusCode(StatusCode.METHOD_NOT_ALLOWED.getStatusCode());
+                    rsp.setStatusMessage(StatusCode.METHOD_NOT_ALLOWED.getStatusMessage());
+                    rsp.end();
                 }
             });
         }
