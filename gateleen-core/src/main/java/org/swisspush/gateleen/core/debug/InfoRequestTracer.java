@@ -1,5 +1,6 @@
 package org.swisspush.gateleen.core.debug;
 
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServerRequest;
 
 /**
@@ -24,10 +25,10 @@ import io.vertx.core.http.HttpServerRequest;
  */
 public interface InfoRequestTracer {
 
-    public void onWritingHttpResponseBegin(HttpServerRequest req);
+    public void onWritingHttpResponseBegin(Vertx vertx, HttpServerRequest req);
 
-    public void onWritingHttpResponseHasReturned(HttpServerRequest req);
+    public void onWritingHttpResponseHasReturned(Vertx vertx, HttpServerRequest req);
 
-    public void onWritingHttpResponseEnd(Throwable ex, HttpServerRequest req);
+    public void onWritingHttpResponseEnd(Vertx vertx, Throwable ex, HttpServerRequest req);
 
 }

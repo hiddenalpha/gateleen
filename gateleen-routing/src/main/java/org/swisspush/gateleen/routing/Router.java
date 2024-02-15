@@ -426,10 +426,10 @@ public class Router implements Refreshable, LoggableResource, ConfigurationResou
                 var rsp = ctx.response();
                 if (HttpMethod.GET == ctx.request().method()) {
                     if (infoRequestTracer != null) {
-                        infoRequestTracer.onWritingHttpResponseBegin(ctx.request());
+                        infoRequestTracer.onWritingHttpResponseBegin(vertx, ctx.request());
                         rsp.headers().set("Content-Type", "application/json");
-                        rsp.end(info.toString(), endEv -> infoRequestTracer.onWritingHttpResponseEnd(endEv.cause(), ctx.request()));
-                        infoRequestTracer.onWritingHttpResponseHasReturned(ctx.request());
+                        rsp.end(info.toString(), endEv -> infoRequestTracer.onWritingHttpResponseEnd(vertx, endEv.cause(), ctx.request()));
+                        infoRequestTracer.onWritingHttpResponseHasReturned(vertx, ctx.request());
                     } else {
                         rsp.headers().set("Content-Type", "application/json");
                         rsp.end(info.toString());
