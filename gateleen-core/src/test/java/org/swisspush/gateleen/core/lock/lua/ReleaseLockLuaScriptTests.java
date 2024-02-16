@@ -23,7 +23,6 @@ import static org.swisspush.gateleen.core.lock.impl.RedisBasedLock.STORAGE_PREFI
  * @author https://github.com/mcweba [Marc-Andre Weber]
  */
 @RunWith(VertxUnitRunner.class)
-@org.junit.Ignore("DoesNotWorkOnMyMachine")
 public class ReleaseLockLuaScriptTests extends AbstractLuaScriptTest {
 
     @Test

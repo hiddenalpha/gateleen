@@ -41,7 +41,6 @@ import static org.swisspush.gateleen.cache.storage.RedisCacheStorage.CACHE_PREFI
  * @author https://github.com/mcweba [Marc-Andre Weber]
  */
 @RunWith(VertxUnitRunner.class)
-@org.junit.Ignore("Unit tests MUST NOT use redis! If it does, it is no longer a unit test.")
 public class RedisCacheStorageTest {
 
     @org.junit.Rule

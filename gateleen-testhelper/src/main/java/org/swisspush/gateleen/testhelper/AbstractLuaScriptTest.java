@@ -15,7 +15,6 @@ import java.io.InputStreamReader;
  *
  * @author https://github.com/mcweba [Marc-Andre Weber]
  */
-@org.junit.Ignore("DoesNotWorkOnMyMachine")
 public abstract class AbstractLuaScriptTest {
 
     protected Jedis jedis = null;
