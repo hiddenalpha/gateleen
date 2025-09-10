@@ -460,7 +460,6 @@ public class Forwarder extends AbstractForwarder {
         HttpServerResponse rsp = req.response();
         try {
             rsp.setStatusCode(502);
-            rsp.setStatusMessage(errorId);
             rsp.end("For details, search gateleen logs for\n" + errorId + "\n");
         } catch (IllegalStateException ex2) {
             LOG.debug("{}: {}", req.uri(), ex2.getMessage(), LOG.isTraceEnabled() ? ex2 : null);
