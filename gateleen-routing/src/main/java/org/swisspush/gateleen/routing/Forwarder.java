@@ -33,6 +33,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 /**
@@ -66,6 +67,7 @@ public class Forwarder extends AbstractForwarder {
     private static final int STATUS_CODE_2XX = 2;
 
     private static final Logger LOG = LoggerFactory.getLogger(Forwarder.class);
+    private static AtomicInteger nextErrorId = new AtomicInteger();
     private Timer forwardTimer;
     private MeterRegistry meterRegistry;
 
@@ -302,6 +304,7 @@ public class Forwarder extends AbstractForwarder {
                     return;
                 }
                 HttpClientRequest cReq = event.result();
+                cReq.exceptionHandler(ex -> onUpstreamError(ex, req, targetUri));
                 final Handler<AsyncResult<HttpClientResponse>> cResHandler = getAsyncHttpClientResponseHandler(req, targetUri, log, profileHeaderMap, loggingHandler, finalStartTime, finalTimerSample, afterHandler);
                 cReq.response(cResHandler);
 
@@ -449,6 +452,19 @@ public class Forwarder extends AbstractForwarder {
                 loggingHandler.request(cReq.headers());
             }
         });
+    }
+
+    private void onUpstreamError(Throwable ex1, HttpServerRequest req, String targetUri) {
+        String errorId = "error_3oiuhtg3oihgu_" + nextErrorId.getAndIncrement();
+        LOG.error("{}: {} ({})", targetUri, ex1.getMessage(), errorId, LOG.isTraceEnabled() ? ex1 : null);
+        HttpServerResponse rsp = req.response();
+        try {
+            rsp.setStatusCode(502);
+            rsp.setStatusMessage(errorId);
+            rsp.end("For details, search gateleen logs for\n" + errorId + "\n");
+        } catch (IllegalStateException ex2) {
+            LOG.debug("{}: {}", req.uri(), ex2.getMessage(), LOG.isTraceEnabled() ? ex2 : null);
+        }
     }
 
     private Future<Optional<AuthHeader>> maybeAuthenticate(Rule rule) {
