@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
@@ -304,7 +305,7 @@ public class Forwarder extends AbstractForwarder {
                     return;
                 }
                 HttpClientRequest cReq = event.result();
-                cReq.exceptionHandler(ex -> onUpstreamRequestError(ex, req, cReq));
+                cReq.exceptionHandler(ex -> onUpstreamError(ex, req, cReq::getURI));
                 final Handler<AsyncResult<HttpClientResponse>> cResHandler = getAsyncHttpClientResponseHandler(req, targetUri, log, profileHeaderMap, loggingHandler, finalStartTime, finalTimerSample, afterHandler);
                 cReq.response(cResHandler);
 
@@ -454,33 +455,21 @@ public class Forwarder extends AbstractForwarder {
         });
     }
 
-    private void onUpstreamRequestError(Throwable exOrig, HttpServerRequest dwnstrmReq, HttpClientRequest upstrmReq) {
-        String errorId = "error_3oiuhtg3oihgu_" + nextErrorId.getAndIncrement();
-        LOG.error("{}: {} ({})", upstrmReq.getURI(), exOrig.getMessage(), errorId, LOG.isDebugEnabled() ? exOrig : null);
-        HttpServerResponse dwnstrmRsp = dwnstrmReq.response();
-        try {
-            dwnstrmRsp.setStatusCode(502);
-            dwnstrmRsp.end("For details, search gateleen logs for\n" + errorId + "\n");
-        } catch (IllegalStateException exAlreadySent) {
-            LOG.debug("{}: {}", dwnstrmReq.uri(), exAlreadySent.getMessage(), LOG.isTraceEnabled() ? exAlreadySent : null);
-        }
-    }
-
-    private void onUpstreamResponseError(Throwable exOrig, HttpServerRequest dwnstrmReq, HttpClientResponse upstrmRsp) {
-        String errorId = "error_ziushslfhbr_" + nextErrorId.getAndIncrement();
+    private void onUpstreamError(Throwable exOrig, HttpServerRequest dwnstrmReq, Supplier<String> getUpstreamRequestUri) {
+        String errorId = "error_aeuthaeower_" + nextErrorId.getAndIncrement();
         String upstrmReqUri;
         try {
-            upstrmReqUri = upstrmRsp.request().getURI();
-        } catch (UnsupportedOperationException|NullPointerException exUnsup) {
-            LOG.debug("{}", exUnsup.getMessage(), LOG.isTraceEnabled() ? exUnsup : null);
+            upstrmReqUri = getUpstreamRequestUri.get();
+        } catch (RuntimeException exUseless) {
+            LOG.debug("{}", exUseless.getMessage(), LOG.isTraceEnabled() ? exUseless : null);
             upstrmReqUri = "null";
         }
         LOG.error("{}: {} ({})", upstrmReqUri, exOrig.getMessage(), errorId, LOG.isDebugEnabled() ? exOrig : null);
-        HttpServerResponse downstrmRsp = dwnstrmReq.response();
         try {
-            downstrmRsp.setStatusCode(502);
-            downstrmRsp.end("For details, search gateleen logs for\n" + errorId + "\n");
-        } catch (IllegalStateException exAlreadySent) {
+            HttpServerResponse dwnstrmRsp = dwnstrmReq.response();
+            dwnstrmRsp.setStatusCode(502);
+            dwnstrmRsp.end("For details, search gateleen logs for\n" + errorId + "\n");
+        } catch (RuntimeException exAlreadySent) {
             LOG.debug("{}: {}", dwnstrmReq.uri(), exAlreadySent.getMessage(), LOG.isTraceEnabled() ? exAlreadySent : null);
         }
     }
@@ -553,7 +542,7 @@ public class Forwarder extends AbstractForwarder {
             handleForwardDurationMetrics(timerSample);
 
             HttpClientResponse cRes = asyncResult.result();
-            cRes.exceptionHandler(ex -> onUpstreamResponseError(ex, req, cRes));
+            cRes.exceptionHandler(ex -> onUpstreamError(ex, req, () -> cRes.request().getURI()));
             loggingHandler.setResponse(cRes);
             req.response().setStatusCode(cRes.statusCode());
             req.response().setStatusMessage(cRes.statusMessage());
