@@ -304,7 +304,7 @@ public class Forwarder extends AbstractForwarder {
                     return;
                 }
                 HttpClientRequest cReq = event.result();
-                cReq.exceptionHandler(ex -> onUpstreamError(ex, req, targetUri));
+                cReq.exceptionHandler(ex -> onUpstreamRequestError(ex, req, cReq));
                 final Handler<AsyncResult<HttpClientResponse>> cResHandler = getAsyncHttpClientResponseHandler(req, targetUri, log, profileHeaderMap, loggingHandler, finalStartTime, finalTimerSample, afterHandler);
                 cReq.response(cResHandler);
 
@@ -454,15 +454,34 @@ public class Forwarder extends AbstractForwarder {
         });
     }
 
-    private void onUpstreamError(Throwable ex1, HttpServerRequest req, String targetUri) {
+    private void onUpstreamRequestError(Throwable exOrig, HttpServerRequest dwnstrmReq, HttpClientRequest upstrmReq) {
         String errorId = "error_3oiuhtg3oihgu_" + nextErrorId.getAndIncrement();
-        LOG.error("{}: {} ({})", targetUri, ex1.getMessage(), errorId, LOG.isTraceEnabled() ? ex1 : null);
-        HttpServerResponse rsp = req.response();
+        LOG.error("{}: {} ({})", upstrmReq.getURI(), exOrig.getMessage(), errorId, LOG.isDebugEnabled() ? exOrig : null);
+        HttpServerResponse dwnstrmRsp = dwnstrmReq.response();
         try {
-            rsp.setStatusCode(502);
-            rsp.end("For details, search gateleen logs for\n" + errorId + "\n");
-        } catch (IllegalStateException ex2) {
-            LOG.debug("{}: {}", req.uri(), ex2.getMessage(), LOG.isTraceEnabled() ? ex2 : null);
+            dwnstrmRsp.setStatusCode(502);
+            dwnstrmRsp.end("For details, search gateleen logs for\n" + errorId + "\n");
+        } catch (IllegalStateException exAlreadySent) {
+            LOG.debug("{}: {}", dwnstrmReq.uri(), exAlreadySent.getMessage(), LOG.isTraceEnabled() ? exAlreadySent : null);
+        }
+    }
+
+    private void onUpstreamResponseError(Throwable exOrig, HttpServerRequest dwnstrmReq, HttpClientResponse upstrmRsp) {
+        String errorId = "error_ziushslfhbr_" + nextErrorId.getAndIncrement();
+        String upstrmReqUri;
+        try {
+            upstrmReqUri = upstrmRsp.request().getURI();
+        } catch (UnsupportedOperationException|NullPointerException exUnsup) {
+            LOG.debug("{}", exUnsup.getMessage(), LOG.isTraceEnabled() ? exUnsup : null);
+            upstrmReqUri = "null";
+        }
+        LOG.error("{}: {} ({})", upstrmReqUri, exOrig.getMessage(), errorId, LOG.isDebugEnabled() ? exOrig : null);
+        HttpServerResponse downstrmRsp = dwnstrmReq.response();
+        try {
+            downstrmRsp.setStatusCode(502);
+            downstrmRsp.end("For details, search gateleen logs for\n" + errorId + "\n");
+        } catch (IllegalStateException exAlreadySent) {
+            LOG.debug("{}: {}", dwnstrmReq.uri(), exAlreadySent.getMessage(), LOG.isTraceEnabled() ? exAlreadySent : null);
         }
     }
 
@@ -513,7 +532,6 @@ public class Forwarder extends AbstractForwarder {
 
     private Handler<AsyncResult<HttpClientResponse>> getAsyncHttpClientResponseHandler(final HttpServerRequest req, final String targetUri, final Logger log, final Map<String, String> profileHeaderMap, final LoggingHandler loggingHandler, @Nullable final Long startTime, @Nullable Timer.Sample timerSample, @Nullable final Handler<Void> afterHandler) {
         return asyncResult -> {
-            HttpClientResponse cRes = asyncResult.result();
             if (asyncResult.failed()) {
                 error(asyncResult.cause().getMessage(), req, targetUri);
                 HttpServerResponse rsp = req.response();
@@ -534,6 +552,8 @@ public class Forwarder extends AbstractForwarder {
 
             handleForwardDurationMetrics(timerSample);
 
+            HttpClientResponse cRes = asyncResult.result();
+            cRes.exceptionHandler(ex -> onUpstreamResponseError(ex, req, cRes));
             loggingHandler.setResponse(cRes);
             req.response().setStatusCode(cRes.statusCode());
             req.response().setStatusMessage(cRes.statusMessage());
