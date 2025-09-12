@@ -24,6 +24,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
+import static io.vertx.core.Future.failedFuture;
+import static io.vertx.core.Future.succeededFuture;
+
 
 /**
  * Decorates an {@link HttpClient} to only effectively close the client
@@ -52,61 +55,81 @@ public class DeferCloseHttpClient implements HttpClient {
 
 
     @Override
-    public void request(HttpMethod method, int port, String host, String requestURI, Handler<AsyncResult<HttpClientRequest>> handler) {
-        logger.debug("({}:{}).request({}, \"{}\")", host, port, method, requestURI);
-        int counter = countOfRequestsInProgress.incrementAndGet();
-        logger.debug("Pending request count: {}", counter);
-        delegate.request(method, port, host, requestURI).onComplete(asyncRequestResult -> {
-            if (asyncRequestResult.failed()) {
-                logger.debug("({}:{}).request({}, \"{}\") failed in request() with {}", host, port, method, requestURI, asyncRequestResult.cause());
-                // do the same as further down
-                onEndOfRequestResponseCycle();
-                return;
-            }
-            HttpClientRequest request = asyncRequestResult.result();
-            request.response(asyncResponseResult -> {
-                if (asyncResponseResult.failed()) {
-                    Throwable ex = asyncRequestResult.cause();
-                    logger.debug("({}:{}).request({}, \"{}\") failed in response() with {}", host, port, method, requestURI, ex);
-                    // Does not make sense to install any handlers. Just make sure we decrement
-                    // our counter then pass-through the exception.
-                    onEndOfRequestResponseCycle();
-                    throwAnyway(ex);
+    public void request(HttpMethod method, int port, String host, String requestURI, Handler<AsyncResult<HttpClientRequest>> onDone) {
+        new Object() {
+            AtomicBoolean isAlreadyResolved = new AtomicBoolean();
+            Handler<Void> originalUpstreamResponseEndHandler;
+            Handler<Throwable> originalUpstreamResponseExceptionHandler;
+            AtomicBoolean isUpstreamHasEnded = new AtomicBoolean();
+            Throwable onResponseException;
+            void init() {
+                try {
+                    run();
+                } catch (Exception ex) {
+                    resolveWith(ex, null);
                 }
-                HttpClientResponse upstreamRsp = asyncResponseResult.result();
+            }
+            void run() {
+                logger.debug("({}:{}).request({}, \"{}\")", host, port, method, requestURI);
+                int counter = countOfRequestsInProgress.incrementAndGet();
+                logger.debug("Pending request count: {}", counter);
+                delegate.request(method, port, host, requestURI).andThen(requestEv -> {
+                    if (requestEv.failed()) resolveWith(requestEv.cause(), null);
+                    else onRequest(requestEv.result());
+                }).onFailure(ex -> resolveWith(ex, null));
+            }
+            private void onRequest(HttpClientRequest request) {
+                /* we ourself will register here. */
+                request.response(responseEv -> {
+                    if (responseEv.failed()) {
+                        this.onResponseException = responseEv.cause();
+                    } else try {
+                        onUpstreamResponse(responseEv.result());
+                    } catch (Exception ex) {
+                        resolveWith(ex, null);
+                        return;
+                    }
+                    /* But we pass a decorated request to our callee. */
+                    resolveWith(null, decoratedRequest());
+                });
+            }
+            private HttpClientRequest decoratedRequest() {
+                return new HttpClientRequest() {
+                };
+            }
+            private void onUpstreamResponse(HttpClientResponse upstreamRsp) {
                 // Delegate to the same method on the delegate. But install our own handler which
                 // allows us to intercept the response.
-                logger.debug("onUpstreamRsp(code={})", upstreamRsp.statusCode());
+                logger.debug("onUpstreamResponse(code={})", upstreamRsp.statusCode());
                 // 1st we have to pass-through the response so our caller is able to install its handlers.
                 // We also need to ensure that our reference counter stays accurate. Badly vertx
                 // may call BOTH of our handlers. And in this scenario we MUST NOT decrement
                 // twice. So we additionally track this too.
-                final AtomicBoolean needToDecrementCounter = new AtomicBoolean(true);
+                //
                 // Then (after client installed its handlers), we now can intercept those by
                 // replacing them with our own handlers.
                 // To do this, we 1st backup the original handler (so we can delegate to it later).
-                Handler<Void> originalEndHandler = getEndHandler(upstreamRsp);
-                upstreamRsp.endHandler(event -> {
-                    logger.debug("upstreamRsp.endHandler()");
-                    if (needToDecrementCounter.getAndSet(false)) {
-                        onEndOfRequestResponseCycle();
-                    }
-                    // Call the original handler independent of the above condition to not change
-                    // behaviour of the impl we are decorating.
-                    callHandlerIfExists(originalEndHandler, event);
-                });
+                originalUpstreamResponseEndHandler = getEndHandler(upstreamRsp);
+                upstreamRsp.endHandler(this::onUpstreamResponseEnd);
                 // We also need to intercept exception handler to decrement our counter in case
                 // of erroneous-end scenario. Basically same idea as above.
-                Handler<Throwable> originalExceptionHandler = getExceptionHandler(upstreamRsp);
-                upstreamRsp.exceptionHandler(event -> {
-                    logger.debug("upstreamRsp.exceptionHandler({})", event.toString());
-                    if (needToDecrementCounter.getAndSet(false)) {
-                        onEndOfRequestResponseCycle();
-                    }
-                    callHandlerIfExists(originalExceptionHandler, event);
-                });
-            });
-        }).onComplete(handler);
+                originalUpstreamResponseExceptionHandler = getExceptionHandler(upstreamRsp);
+                upstreamRsp.exceptionHandler(this::onUpstreamResponseException);
+            }
+            private void onUpstreamResponseEnd(Void nothing) {
+                if (!isUpstreamHasEnded.compareAndSet(false, true)) return;
+                callHandlerIfExists(originalUpstreamResponseEndHandler, nothing);
+            }
+            private void onUpstreamResponseException(Throwable ex) {
+                if (!isUpstreamHasEnded.compareAndSet(false, true)) return;
+                callHandlerIfExists(originalUpstreamResponseExceptionHandler, ex);
+            }
+            void resolveWith(Throwable ex, HttpClientRequest result) {
+                if (!isAlreadyResolved.compareAndSet(false, true)) return;
+                onEndOfRequestResponseCycle();
+                onDone.handle(ex != null ? failedFuture(ex) : succeededFuture(result));
+            }
+        }.init();
     }
 
     private void onEndOfRequestResponseCycle() {
