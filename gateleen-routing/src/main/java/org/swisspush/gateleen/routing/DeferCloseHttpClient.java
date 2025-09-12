@@ -1,7 +1,19 @@
 package org.swisspush.gateleen.routing;
 
-import io.vertx.core.*;
-import io.vertx.core.http.*;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.MultiMap;
+import io.vertx.core.Vertx;
+import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientRequest;
+import io.vertx.core.http.HttpClientResponse;
+import io.vertx.core.http.HttpConnection;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.core.http.RequestOptions;
+import io.vertx.core.http.WebSocket;
+import io.vertx.core.http.WebSocketConnectOptions;
+import io.vertx.core.http.WebsocketVersion;
 import io.vertx.core.net.SSLOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 
@@ -26,7 +39,7 @@ public class DeferCloseHttpClient implements HttpClient {
     private static final Logger logger = LoggerFactory.getLogger(DeferCloseHttpClient.class);
     private final Vertx vertx;
     private final HttpClient delegate;
-    private int countOfRequestsInProgress = 0;
+    private final AtomicInteger countOfRequestsInProgress = new AtomicInteger();
     private boolean doCloseWhenDone = false;
 
     /**
@@ -41,8 +54,8 @@ public class DeferCloseHttpClient implements HttpClient {
     @Override
     public void request(HttpMethod method, int port, String host, String requestURI, Handler<AsyncResult<HttpClientRequest>> handler) {
         logger.debug("({}:{}).request({}, \"{}\")", host, port, method, requestURI);
-        countOfRequestsInProgress += 1;
-        logger.debug("Pending request count: {}", countOfRequestsInProgress);
+        int counter = countOfRequestsInProgress.incrementAndGet();
+        logger.debug("Pending request count: {}", counter);
         delegate.request(method, port, host, requestURI).onComplete(asyncRequestResult -> {
             if (asyncRequestResult.failed()) {
                 logger.debug("({}:{}).request({}, \"{}\") failed in request() with {}", host, port, method, requestURI, asyncRequestResult.cause());
@@ -53,18 +66,18 @@ public class DeferCloseHttpClient implements HttpClient {
             HttpClientRequest request = asyncRequestResult.result();
             request.response(asyncResponseResult -> {
                 if (asyncResponseResult.failed()) {
-                    logger.debug("({}:{}).request({}, \"{}\") failed in response() with {}", host, port, method, requestURI, asyncResponseResult.cause());
+                    Throwable ex = asyncRequestResult.cause();
+                    logger.debug("({}:{}).request({}, \"{}\") failed in response() with {}", host, port, method, requestURI, ex);
                     // Does not make sense to install any handlers. Just make sure we decrement
                     // our counter then pass-through the exception.
                     onEndOfRequestResponseCycle();
-                    return;
+                    throwAnyway(ex);
                 }
                 HttpClientResponse upstreamRsp = asyncResponseResult.result();
                 // Delegate to the same method on the delegate. But install our own handler which
                 // allows us to intercept the response.
                 logger.debug("onUpstreamRsp(code={})", upstreamRsp.statusCode());
                 // 1st we have to pass-through the response so our caller is able to install its handlers.
-
                 // We also need to ensure that our reference counter stays accurate. Badly vertx
                 // may call BOTH of our handlers. And in this scenario we MUST NOT decrement
                 // twice. So we additionally track this too.
@@ -97,9 +110,9 @@ public class DeferCloseHttpClient implements HttpClient {
     }
 
     private void onEndOfRequestResponseCycle() {
-        countOfRequestsInProgress -= 1;
-        logger.debug("Pending request count: {}", countOfRequestsInProgress);
-        if (countOfRequestsInProgress == 0 && doCloseWhenDone) {
+        int counter = countOfRequestsInProgress.decrementAndGet();
+        logger.debug("Pending request count: {}", counter);
+        if (counter == 0 && doCloseWhenDone) {
             logger.debug("No pending request right now. And someone called 'close()' earlier. So close now.");
             doCloseWhenDone = false;
             try {
@@ -112,8 +125,9 @@ public class DeferCloseHttpClient implements HttpClient {
 
     @Override
     public Future<Void> close() {
-        if (countOfRequestsInProgress > 0) {
-            logger.debug("Do NOT close right now. But close as soon there are no more pending requests (pending={})", countOfRequestsInProgress);
+        int counter = countOfRequestsInProgress.get();
+        if (counter > 0) {
+            logger.debug("Do NOT close right now. But close as soon there are no more pending requests (pending={})", counter);
             doCloseWhenDone = true;
             // Still use a timer. Because who knows.
             vertx.setTimer(CLOSE_ANYWAY_AFTER_MS, timerId -> {
@@ -163,14 +177,19 @@ public class DeferCloseHttpClient implements HttpClient {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    public static <T extends Throwable> void throwAnyway(Throwable ex) throws T {
+        throw (T)ex;
+    }
+
     ///////////////////////////////////////////////////////////////////////////////
     // Below are only the remaining methods which all just delegate.
     ///////////////////////////////////////////////////////////////////////////////
+
     @Override
     public Future<HttpClientRequest> request(RequestOptions options) {
         return delegate.request(options);
     }
-
 
     @Override
     public void request(RequestOptions options, Handler<AsyncResult<HttpClientRequest>> handler) {
