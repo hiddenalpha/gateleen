@@ -597,38 +597,18 @@ public class LocalHttpClientRequest extends BufferBridge implements HttpClientRe
     }
 
     @Override
-    public HttpMethod method() {
-        return method;
-    }
-
-    @Override
-    public String getRawMethod() {
-        return method.name();
-    }
-
-    @Override
-    public HttpClientRequest setRawMethod(String method) {
-        return this;
-    }
-
-    @Override
     public String absoluteURI() {
         throw new UnsupportedOperationException();
     }
 
     @Override
     public String getURI() {
-        throw new UnsupportedOperationException();
+        return uri;
     }
 
     @Override
     public HttpClientRequest setURI(String uri) {
         throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public String uri() {
-        return uri;
     }
 
     @Override
@@ -912,11 +892,6 @@ public class LocalHttpClientRequest extends BufferBridge implements HttpClientRe
         // As "no connection" is associated with this request, we return "no connection".
         log.debug("There's no connection associated with this request.");
         return null;
-    }
-
-    @Override
-    public HttpClientRequest connectionHandler(@Nullable Handler<HttpConnection> handler) {
-        return this;
     }
 
     @Override
