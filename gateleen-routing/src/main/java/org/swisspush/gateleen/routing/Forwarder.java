@@ -8,7 +8,6 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
-import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClient;
@@ -20,7 +19,6 @@ import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.Pump;
-import io.vertx.core.streams.WriteStream;
 import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +48,8 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
+import static io.vertx.core.Future.failedFuture;
+import static io.vertx.core.Future.succeededFuture;
 import static org.swisspush.gateleen.core.util.HttpHeaderUtil.removeNonForwardHeaders;
 import static org.swisspush.gateleen.core.util.StatusCode.INTERNAL_SERVER_ERROR;
 
@@ -382,7 +382,16 @@ public class Forwarder extends AbstractForwarder {
         }
         ctx.upReq = event.result();
         ctx.upReq.exceptionHandler(ex -> onUpstreamError(ex, ctx.dnReq, ctx.upReq::getURI));
-        ctx.upReq.response(ev -> onUpstreamResponseNoThrow(ev, ctx, "findme_3q908hjq98t"));
+        ctx.upReq.response(ev -> {
+            if (ev.failed()) {
+                ctx.log.error("Bad upstream response: {}://{}{} {}",
+                        rule.getScheme(), target, ctx.targetUri, ev.cause().getMessage(),
+                        ctx.log.isDebugEnabled() ? ev.cause() : null);
+                tryRespondWithInternalServerError(ctx.dnReq.response(), ctx.log, "findme_49ot58h0inrnu3985h");
+                return;
+            }
+            onUpstreamResponseNoThrow(ev.result(), ctx, "findme_3q908hjq98t");
+        });
 
         if (ctx.timeout != null) {
             ctx.upReq.idleTimeout(Long.parseLong(ctx.timeout));
@@ -436,65 +445,17 @@ public class Forwarder extends AbstractForwarder {
             // But still it's allowed - so they 'could' have one. So using http-method to decide "chunked or not" is also not a sustainable solution.
             //
             // --> we need to wrap the client-Request to catch up the first (body)-buffer and "setChucked(true)" in advance and just-in-time.
-            WriteStream<Buffer> cReqWrapped = new WriteStream<>() {
-                private boolean firstBuffer = true;
-
-                @Override
-                public WriteStream<Buffer> exceptionHandler(Handler<Throwable> handler) {
-                    ctx.upReq.exceptionHandler(handler);
-                    return this;
+            AutomaticChunkedTransfer cReqWrapped = new AutomaticChunkedTransfer(vertx, ctx.upReq, "findme_oi8hju30895jh3itj");
+            cReqWrapped.response((AsyncResult<HttpClientResponse> ev) -> {
+                if (ev.failed()) {
+                    ctx.log.error("Bad upstream rsp: {}: {}://{}{}",
+                            ev.cause().getMessage(), rule.getScheme(), target, ctx.targetUri,
+                            ctx.log.isDebugEnabled() ? ev.cause() : null);
+                    tryRespondWithInternalServerError(ctx.dnReq.response(), ctx.log, "findme_49ot58h0inrnu3985h");
+                    return;
                 }
-
-                @Override
-                public Future<Void> write(Buffer data) {
-                    // only now we know for sure that there IS a body.
-                    if (firstBuffer) {
-                        // avoid multiple calls due to a 'syncronized' block in HttpClient's implementation
-                        firstBuffer = false;
-                        ctx.upReq.setChunked(true);
-                    }
-                    return ctx.upReq.write(data);
-                }
-
-                @Override
-                public void write(Buffer data, Handler<AsyncResult<Void>> handler) {
-                    write(data).onComplete(handler);
-                }
-
-                @Override
-                public Future<Void> end() {
-                    Promise<Void> promise = Promise.promise();
-                    ctx.upReq.send(asyncResult -> {
-                                /* TODO wait.. WHAT?!? why is this handler CALLED AGAIN HERE?!? */
-                                onUpstreamResponseNoThrow(asyncResult, ctx, "findme_adv2089hj3werag");
-                                promise.complete();
-                            }
-                    );
-                    return promise.future();
-                }
-
-                @Override
-                public void end(Handler<AsyncResult<Void>> handler) {
-                    this.end().onComplete(handler);
-                }
-
-                @Override
-                public WriteStream<Buffer> setWriteQueueMaxSize(int maxSize) {
-                    ctx.upReq.setWriteQueueMaxSize(maxSize);
-                    return this;
-                }
-
-                @Override
-                public boolean writeQueueFull() {
-                    return ctx.upReq.writeQueueFull();
-                }
-
-                @Override
-                public WriteStream<Buffer> drainHandler(@Nullable Handler<Void> handler) {
-                    ctx.upReq.drainHandler(handler);
-                    return this;
-                }
-            };
+                onUpstreamResponseNoThrow(ev.result(), ctx, "findme_089hj38oihj5h3");
+            });
 
             ctx.dnReq.exceptionHandler(t -> {
                 ctx.log.info("Exception during forwarding - closing (forwarding) client connection", t);
@@ -529,9 +490,9 @@ public class Forwarder extends AbstractForwarder {
         ctx.loggingHandler.request(ctx.upReq.headers());
     }
 
-    private void onUpstreamResponseNoThrow(AsyncResult<HttpClientResponse> ev, RequestCtx ctx, String dbgHint) {
+    private void onUpstreamResponseNoThrow(HttpClientResponse ev, RequestCtx ctx, String dbgHint) {
         try {
-            onUpstreamResponse(ev, ctx, dbgHint);
+            onUpstreamResponse(ev, ctx);
         } catch (RuntimeException ex) {
             /* catch-all unhandled exceptions. Usually, this code SHOULD NOT be reached!
              * (If it is reached, GO FIX THE METHOD WE CALL ABOVE!) This is our
@@ -544,14 +505,7 @@ public class Forwarder extends AbstractForwarder {
         }
     }
 
-    private void onUpstreamResponse(AsyncResult<HttpClientResponse> ev, RequestCtx ctx, String dbgHint) {
-        if (ev.failed()) {
-            ctx.log.error("{}: {}://{}{} {}",
-                    dbgHint, rule.getScheme(), target, ctx.targetUri, ev.cause().getMessage(),
-                    ctx.log.isDebugEnabled() ? ev.cause() : null);
-            tryRespondWithInternalServerError(ctx.dnReq.response(), ctx.log, dbgHint);
-            return;
-        }
+    private void onUpstreamResponse(HttpClientResponse rsp, RequestCtx ctx) {
         ctx.dnRsp = ctx.dnReq.response();
         if (monitoringHandler != null) {
             monitoringHandler.stopRequestMetricTracking(rule.getMetricName(), ctx.startTime, ctx.dnReq.uri());
@@ -559,7 +513,7 @@ public class Forwarder extends AbstractForwarder {
 
         handleForwardDurationMetrics(ctx.timerSample);
 
-        ctx.upRes = ev.result();
+        ctx.upRes = rsp;
         ctx.upRes.exceptionHandler(ex -> onUpstreamError(ex, ctx.dnReq, () -> ctx.upRes.request().getURI()));
         ctx.loggingHandler.setResponse(ctx.upRes);
         ctx.dnRsp.setStatusCode(ctx.upRes.statusCode());
