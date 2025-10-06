@@ -138,14 +138,6 @@ public class AutomaticChunkedTransfer implements WriteStream<Buffer> {
         }
     }
 
-    /**
-     * Behaves like {@link HttpClientRequest#response(Handler)}.
-     */
-    public AutomaticChunkedTransfer response(Handler<AsyncResult<HttpClientResponse>> rspHandler) {
-        delegate.response(rspHandler);
-        return this;
-    }
-
     @Override
     public Future<Void> write(Buffer data) {
         var p = Promise.<Void>promise();

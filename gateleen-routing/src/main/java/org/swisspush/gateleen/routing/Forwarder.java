@@ -446,16 +446,6 @@ public class Forwarder extends AbstractForwarder {
             //
             // --> we need to wrap the client-Request to catch up the first (body)-buffer and "setChucked(true)" in advance and just-in-time.
             AutomaticChunkedTransfer cReqWrapped = new AutomaticChunkedTransfer(vertx, ctx.upReq, "findme_oi8hju30895jh3itj");
-            cReqWrapped.response((AsyncResult<HttpClientResponse> ev) -> {
-                if (ev.failed()) {
-                    ctx.log.error("Bad upstream rsp: {}: {}://{}{}",
-                            ev.cause().getMessage(), rule.getScheme(), target, ctx.targetUri,
-                            ctx.log.isDebugEnabled() ? ev.cause() : null);
-                    tryRespondWithInternalServerError(ctx.dnReq.response(), ctx.log, "findme_49ot58h0inrnu3985h");
-                    return;
-                }
-                onUpstreamResponseNoThrow(ev.result(), ctx, "findme_089hj38oihj5h3");
-            });
 
             ctx.dnReq.exceptionHandler(t -> {
                 ctx.log.info("Exception during forwarding - closing (forwarding) client connection", t);
