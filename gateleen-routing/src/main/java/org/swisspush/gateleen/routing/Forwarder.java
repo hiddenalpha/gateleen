@@ -254,9 +254,9 @@ public class Forwarder extends AbstractForwarder {
 
         maybeAuthenticate(rule).onComplete(event -> {
             if (event.failed()) {
-                req.resume();
                 log.error("Failed to authenticate request. Cause: {}", event.cause().getMessage());
                 respondError(req, StatusCode.UNAUTHORIZED);
+                req.resume();
                 return;
             }
             Optional<AuthHeader> authHeader = event.result();
@@ -354,10 +354,10 @@ public class Forwarder extends AbstractForwarder {
         /* initiate request to target server */
         client.request(req.method(), port, rule.getHost(), ctx.targetUri, ev -> {
             if (ev.failed()) {
-                ctx.dnReq.resume();
                 ctx.log.warn("Problem to request {}: {}", ctx.targetUri, ev.cause());
                 tryRespondWithServiceUnavailable(ctx.dnReq.response(), log, "findme_48hj349lgnt8j");
                 handleForwardDurationMetrics(ctx.timerSample);
+                ctx.dnReq.resume();
                 return;
             }
             onNewRequestCompleteNoThrow(ev, ctx);
@@ -382,7 +382,6 @@ public class Forwarder extends AbstractForwarder {
     private void onNewRequestComplete(AsyncResult<HttpClientRequest> event, RequestCtx ctx) {
         ctx.dnReq.resume();
         if (event.failed()) {
-            ctx.dnReq.resume();
             ctx.log.warn("Problem to request {}: {}", ctx.targetUri, event.cause());
             handleForwardDurationMetrics(ctx.timerSample);
             final HttpServerResponse response = ctx.dnReq.response();
