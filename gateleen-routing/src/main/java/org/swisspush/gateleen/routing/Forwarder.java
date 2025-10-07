@@ -384,7 +384,7 @@ public class Forwarder extends AbstractForwarder {
         ctx.upReq.exceptionHandler(ex -> onUpstreamError(ex, ctx.dnReq, ctx.upReq::getURI));
         ctx.upReq.response(ev -> {
             if (ev.failed()) {
-                ctx.log.error("Bad upstream response: {}://{}{} {}",
+                ctx.log.warn("Bad upstream response: {}://{}{} {}",
                         rule.getScheme(), target, ctx.targetUri, ev.cause().getMessage(),
                         ctx.log.isDebugEnabled() ? ev.cause() : null);
                 tryRespondWithInternalServerError(ctx.dnReq.response(), ctx.log, "findme_49ot58h0inrnu3985h");

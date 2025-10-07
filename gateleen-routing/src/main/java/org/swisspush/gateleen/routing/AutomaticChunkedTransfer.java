@@ -75,14 +75,14 @@ public class AutomaticChunkedTransfer implements WriteStream<Buffer> {
             if (firstBuffer.getAndSet(false)) {
                 // avoid multiple calls due to a 'syncronized' block in HttpClient's implementation
                 delegate.setChunked(true);
-                if (!delegate.isChunked()) log.info(
+                if (!delegate.isChunked()) log.debug(
                         "WTF?!? setChunked(true), but isChunked() still returns 'false': {}",
                         delegate.getClass());
             }
             // Delegate
             return delegate.write(data);
         }).onFailure((Throwable ex) -> {
-            log.trace("write failed", ex);
+            log.trace("write failed: {} {}", delegate.getMethod(), delegate.getURI(), ex);
             publishError(ex, handler);
         });
     }
@@ -98,7 +98,7 @@ public class AutomaticChunkedTransfer implements WriteStream<Buffer> {
             handler.handle(succeededFuture());
             return null;
         }).<Void>onFailure((Throwable ex) -> {
-            log.trace("end failed", ex);
+            log.trace("end failed: {} {}", delegate.getMethod(), delegate.getURI(), ex);
             publishError(ex, handler);
         });
     }
