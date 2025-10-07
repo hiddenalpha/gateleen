@@ -7,29 +7,15 @@ import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClientRequest;
-import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.streams.WriteStream;
 import org.slf4j.Logger;
 
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Function;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
-import static io.vertx.core.Future.failedFuture;
 import static io.vertx.core.Future.succeededFuture;
 import static org.slf4j.LoggerFactory.getLogger;
 
-
-
-// Gateleen internal requests (e.g. from schedulers or delegates) often have neither "Content-Length" nor "Transfer-Encoding: chunked"
-// header - so we must wait for a body buffer to know: Is there a body or not? Only looking on the headers and/or the http-method is not
-// sustainable to know "has body or not"
-// But: if there is a body, then we need to either setChunked or a Content-Length header (otherwise Vertx complains with an Exception)
-//
-// Setting 'chunked' always has the downside that we use it also for GET, HEAD, OPTIONS etc... Those request methods normally have no body at all
-// But still it's allowed - so they 'could' have one. So using http-method to decide "chunked or not" is also not a sustainable solution.
-//
-// --> we need to wrap the client-Request to catch up the first (body)-buffer and "setChucked(true)" in advance and just-in-time.
 
 /**
  * Gateleen internal requests (e.g. from schedulers or delegates) often

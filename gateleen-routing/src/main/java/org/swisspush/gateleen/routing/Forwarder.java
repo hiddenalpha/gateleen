@@ -51,7 +51,9 @@ import java.util.regex.Pattern;
 import static io.vertx.core.Future.failedFuture;
 import static io.vertx.core.Future.succeededFuture;
 import static org.swisspush.gateleen.core.util.HttpHeaderUtil.removeNonForwardHeaders;
+import static org.swisspush.gateleen.core.util.StatusCode.BAD_GATEWAY;
 import static org.swisspush.gateleen.core.util.StatusCode.INTERNAL_SERVER_ERROR;
+import static org.swisspush.gateleen.core.util.StatusCode.SERVICE_UNAVAILABLE;
 
 
 /**
@@ -350,8 +352,16 @@ public class Forwarder extends AbstractForwarder {
                 req, log, targetUri, startTime, timerSample, profileHeaderMap, loggingHandler,
                 afterHandler, timeout, uniqueId, authHeader.orElse(null), bodyData);
         /* initiate request to target server */
-        client.request(req.method(), port, rule.getHost(), ctx.targetUri,
-                ev -> onNewRequestCompleteNoThrow(ev, ctx));
+        client.request(req.method(), port, rule.getHost(), ctx.targetUri, ev -> {
+            if (ev.failed()) {
+                ctx.dnReq.resume();
+                ctx.log.warn("Problem to request {}: {}", ctx.targetUri, ev.cause());
+                tryRespondWithServiceUnavailable(ctx.dnReq.response(), log, "findme_48hj349lgnt8j");
+                handleForwardDurationMetrics(ctx.timerSample);
+                return;
+            }
+            onNewRequestCompleteNoThrow(ev, ctx);
+        });
     }
 
     private void onNewRequestCompleteNoThrow(AsyncResult<HttpClientRequest> ev, RequestCtx ctx) {
@@ -372,6 +382,7 @@ public class Forwarder extends AbstractForwarder {
     private void onNewRequestComplete(AsyncResult<HttpClientRequest> event, RequestCtx ctx) {
         ctx.dnReq.resume();
         if (event.failed()) {
+            ctx.dnReq.resume();
             ctx.log.warn("Problem to request {}: {}", ctx.targetUri, event.cause());
             handleForwardDurationMetrics(ctx.timerSample);
             final HttpServerResponse response = ctx.dnReq.response();
@@ -387,7 +398,7 @@ public class Forwarder extends AbstractForwarder {
                 ctx.log.warn("Bad upstream response: {}://{}{} {}",
                         rule.getScheme(), target, ctx.targetUri, ev.cause().getMessage(),
                         ctx.log.isDebugEnabled() ? ev.cause() : null);
-                tryRespondWithInternalServerError(ctx.dnReq.response(), ctx.log, "findme_49ot58h0inrnu3985h");
+                tryRespondWithBadGateway(ctx.dnReq.response(), ctx.log, "findme_49ot58h0inrnu3985h");
                 return;
             }
             onUpstreamResponseNoThrow(ev.result(), ctx, "findme_3q908hjq98t");
@@ -480,9 +491,9 @@ public class Forwarder extends AbstractForwarder {
         ctx.loggingHandler.request(ctx.upReq.headers());
     }
 
-    private void onUpstreamResponseNoThrow(HttpClientResponse ev, RequestCtx ctx, String dbgHint) {
+    private void onUpstreamResponseNoThrow(HttpClientResponse rsp, RequestCtx ctx, String dbgHint) {
         try {
-            onUpstreamResponse(ev, ctx);
+            onUpstreamResponse(rsp, ctx);
         } catch (RuntimeException ex) {
             /* catch-all unhandled exceptions. Usually, this code SHOULD NOT be reached!
              * (If it is reached, GO FIX THE METHOD WE CALL ABOVE!) This is our
@@ -622,10 +633,24 @@ public class Forwarder extends AbstractForwarder {
         }
     }
 
-    private void tryRespondWithInternalServerError(HttpServerResponse response, Logger log, String dbgHint) {
+    private void tryRespondWithInternalServerError(HttpServerResponse rsp, Logger log, String dbgHint) {
+        tryRespondWith(rsp, INTERNAL_SERVER_ERROR.getStatusCode(), INTERNAL_SERVER_ERROR.getStatusMessage(), log, dbgHint);
+    }
+
+    private void tryRespondWithBadGateway(HttpServerResponse rsp, Logger log, String dbgHint) {
+        tryRespondWith(rsp, BAD_GATEWAY.getStatusCode(), BAD_GATEWAY.getStatusMessage(), log, dbgHint);
+    }
+
+    private void tryRespondWithServiceUnavailable(HttpServerResponse rsp, Logger log, String dbgHint) {
+        tryRespondWith(rsp, SERVICE_UNAVAILABLE.getStatusCode(), SERVICE_UNAVAILABLE.getStatusMessage(), log, dbgHint);
+    }
+
+    private void tryRespondWith(HttpServerResponse response, int statusCode, String statusMsg, Logger log, String dbgHint) {
+        assert statusCode >= 200 && statusCode <= 599 : statusCode;
+        assert statusMsg != null : "statusMsg != null";
         try {
-            response.setStatusCode(INTERNAL_SERVER_ERROR.getStatusCode());
-            response.setStatusMessage(INTERNAL_SERVER_ERROR.getStatusMessage());
+            response.setStatusCode(statusCode);
+            response.setStatusMessage(statusMsg);
             response.end();
         } catch (IllegalStateException iex) {
             log.debug("{}", dbgHint, iex);
